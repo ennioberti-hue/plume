@@ -519,7 +519,8 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#wcopy')) {
     var m = D.members.filter(function (x) { return x.id === V.pOwner; })[0];
     var w = wishOf(V.pOwner);
-    var text = 'Wishlist di ' + (m ? m.name : '') + '\n\n' + w.map(function (x) { return (x.artist ? x.artist + ' – ' : '') + x.title; }).join('\n');
+    // una riga per disco, senza intestazione: in Google Keep basta «Mostra caselle di controllo» per farne una checklist
+    var text = w.map(function (x) { return (x.artist ? x.artist + ' – ' : '') + x.title; }).join('\n');
     var done = function (ok) { var el = $('wmsg'); if (el) { el.className = 'msg ' + (ok ? 'ok' : 'bad'); el.textContent = ok ? 'Lista copiata.' : 'Copia non riuscita: seleziona il testo a mano.'; } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); else done(false);
   }
