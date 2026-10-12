@@ -307,6 +307,11 @@ var D = { discs: [], cache: {}, members: [], wishlist: [], history: null, histU:
 var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all' };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
+// una voce senza membro (o con un membro che non esiste piu) appartiene al profilo principale, come nell'app
+function wishOf(id) {
+  var main = D.members.length ? D.members[0].id : '';
+  return D.wishlist.filter(function (w) { return (w.member && D.members.some(function (m) { return m.id === w.member; }) ? w.member : main) === id; }).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+}
 function mediaOf(r) { return Array.isArray(r.media) ? r.media : (r.media ? [r.media] : ['cd']); }
 function setStatus(t) { $('status').textContent = t || ''; }
 
@@ -472,7 +477,7 @@ function renderProf() {
   if (s.genres.length) { var gm = s.genres[0].n; h += '<div class="sec"><h2>Generi più presenti</h2>' + s.genres.map(function (g) { return '<div class="bar"><span class="n">' + esc(g.name) + '</span><i><u style="width:' + Math.max(4, Math.round(g.n / gm * 100)) + '%"></u></i><b>' + g.n + '</b></div>'; }).join('') + '</div>'; }
   if (sel === 'all') h += '<div id="hist"><div class="sec"><div class="hint">Carico gli ascolti…</div></div></div>';
   else {
-    var w = D.wishlist.filter(function (x) { return x.member === sel; }).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+    var w = wishOf(sel);
     h += '<div class="sec"><h2>Wishlist</h2>' + (w.length ? w.map(function (x) { return '<div class="h"><div class="ht"><b>' + esc(x.title || '—') + '</b><span>' + esc(x.artist || '') + '</span></div></div>'; }).join('') + '<div class="row"><button class="btn" id="wcopy">Copia lista</button></div><div class="msg ok" id="wmsg"></div>' : '<div class="hint">Nessun disco nella wishlist.</div>') + '</div>';
   }
   $('pf').innerHTML = h;
@@ -513,7 +518,7 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
   if (t.closest('#wcopy')) {
     var m = D.members.filter(function (x) { return x.id === V.pOwner; })[0];
-    var w = D.wishlist.filter(function (x) { return x.member === V.pOwner; }).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
+    var w = wishOf(V.pOwner);
     var text = 'Wishlist di ' + (m ? m.name : '') + '\n\n' + w.map(function (x) { return (x.artist ? x.artist + ' – ' : '') + x.title; }).join('\n');
     var done = function (ok) { var el = $('wmsg'); if (el) { el.className = 'msg ' + (ok ? 'ok' : 'bad'); el.textContent = ok ? 'Lista copiata.' : 'Copia non riuscita: seleziona il testo a mano.'; } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); else done(false);
