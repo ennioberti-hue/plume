@@ -454,12 +454,12 @@ function openDisc(id, dir) {
   var mm = mediaOf(r).map(function (m) { return m === 'vinile' ? 'Vinile' : (m === 'dvd' ? 'DVD' : 'CD'); });
   var kv = function (k, v) { return v ? '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>' : ''; };
   var ov = r.overview ? String(r.overview).split(/\n+/).filter(Boolean).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') : '';
-  var wiki = 'https://it.wikipedia.org/w/index.php?search=' + encodeURIComponent((r.artist || '') + ' ' + (r.title || ''));
+  var wiki = 'https://www.google.com/search?udm=50&q=' + encodeURIComponent('Parlami dell\'album ' + (r.title || '') + (r.artist ? ' di ' + r.artist : ''));
   $('panel').innerHTML = pbar + '<div class="pc' + (dir ? ' in-' + dir : '') + '"><div class="dh">' + (r.cover ? '<img alt="" src="' + esc(r.cover) + '">' : '') + '<div><h2>' + esc(r.title || '—') + '</h2><div class="by">' + esc(r.artist || '') + '</div>' + stars(r.rating) +
     '<div class="tags">' + mm.map(function (m) { return '<span class="tag">' + m + '</span>'; }).join('') + (r.genre ? '<span class="tag">' + esc(r.genre) + '</span>' : '') + '</div></div></div>' +
     '<div class="dsec">' + kv('Etichetta', esc(r.label)) + kv('Nella collezione di', own ? esc(own.name) : '') + kv('Nota', esc(r.note)) + '</div>' +
     (ov ? '<div class="dsec"><h3>Overview</h3>' + ov + '</div>' : '') +
-    '<div class="dsec"><a href="' + wiki + '" target="_blank" rel="noopener noreferrer">Cerca su Wikipedia</a></div></div>';
+    '<div class="dsec"><a href="' + wiki + '" target="_blank" rel="noopener noreferrer">Cerca su Google</a></div></div>';
   $('panel').scrollTop = 0;
   $('sheet').hidden = false; document.body.style.overflow = 'hidden';
 }
