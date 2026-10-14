@@ -138,6 +138,11 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .h time{color:var(--soft);font-size:12.5px;white-space:nowrap}
 .hint{color:var(--soft);font-size:14px}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.wx{flex:none;min-width:36px;height:34px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-size:15px}
+.wx.sure{background:var(--bad);color:var(--accent-ink);font-size:13px;font-weight:600}
+.wform{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.wform input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px}
+.wform .row{margin-top:2px}
 .link{border:0;background:transparent;color:var(--accent);padding:6px 0;font-weight:600}
 
 #boot{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:10px;color:var(--soft)}
@@ -256,11 +261,11 @@ async function http(method, url, body, headers) {
     else if (/TOKEN_EXPIRED|INVALID_REFRESH_TOKEN|USER_NOT_FOUND|CREDENTIAL_TOO_OLD/.test(m) || r.status === 401) c = 'relogin';
     else if (r.status === 403 || /PERMISSION_DENIED/.test(m)) c = 'permission';
     else if (r.status === 429 || /RESOURCE_EXHAUSTED/.test(m)) c = 'quota';
-    throw CErr(c, r.status, m);
+    var ce = CErr(c, r.status, m); ce.fsStatus = (j && j.error && j.error.status) || ''; throw ce;
   }
   return j;
 }
-var ERR = { bad_credentials: 'Email o password non corretti.', too_many: 'Troppi tentativi: riprova tra qualche minuto.', offline: 'Nessuna connessione a Internet.', permission: 'Accesso negato dalle regole del database.', quota: 'Limite giornaliero del piano gratuito raggiunto: riprova domani.', relogin: 'Accesso scaduto: accedi di nuovo.', api_error: 'Errore del servizio, riprova.' };
+var ERR = { bad_credentials: 'Email o password non corretti.', too_many: 'Troppi tentativi: riprova tra qualche minuto.', offline: 'Nessuna connessione a Internet.', permission: 'Accesso negato dalle regole del database.', quota: 'Limite giornaliero del piano gratuito raggiunto: riprova domani.', relogin: 'Accesso scaduto: accedi di nuovo.', api_error: 'Errore del servizio, riprova.', conflict: 'La wishlist è stata modificata in contemporanea: riprova.', no_profile: 'Il profilo non è ancora nel cloud: sincronizza prima dal PC.', bad_profile: 'Non riesco a leggere il profilo salvato nel cloud.' };
 async function signIn(email, pw, remember) {
   var j = await http('POST', AUTH + '/v1/accounts:signInWithPassword?key=' + encodeURIComponent(CFG.apiKey), JSON.stringify({ email: email, password: pw, returnSecureToken: true }), { 'Content-Type': 'application/json' });
   idTok = j.idToken; idExp = Date.now() + (Number(j.expiresIn) || 3600) * 1000; session.email = email;
@@ -301,6 +306,30 @@ async function batchGet(coll, ids, onProgress) {
   return out;
 }
 
+// ---------- scrittura della wishlist (legge il profilo, modifica solo la wishlist, riscrive con controllo di concorrenza) ----------
+async function writeWishlist(mutate) {
+  for (var attempt = 0; attempt < 3; attempt++) {
+    var j = await fs('GET', '/meta/profile').catch(function (e) { if (e.status === 404) return null; throw e; });
+    if (!j || !j.fields) throw CErr('no_profile', 404);
+    var pf = fromFields(j.fields), p = {};
+    try { p = JSON.parse(pf.d || '{}'); } catch (e) { throw CErr('bad_profile', 0); }
+    if (!p || typeof p !== 'object') throw CErr('bad_profile', 0);
+    if (!Array.isArray(p.wishlist)) p.wishlist = [];
+    if (mutate(p.wishlist, p) === 'skip') return { skipped: true, wishlist: p.wishlist, u: Number(pf.u) || 0 };
+    var now = Math.max(Date.now(), (Number(pf.u) || 0) + 1);
+    try {
+      await fs('PATCH', '/meta/profile?updateMask.fieldPaths=u&updateMask.fieldPaths=d&currentDocument.updateTime=' + encodeURIComponent(j.updateTime || ''),
+        { fields: { u: { integerValue: String(now) }, d: { stringValue: JSON.stringify(p) } } });
+    } catch (e) {
+      if (e.status === 409 || e.status === 412 || (e.status === 400 && /FAILED_PRECONDITION|ABORTED/.test((e.fsStatus || '') + ' ' + e.message))) continue;
+      throw e;
+    }
+    return { wishlist: p.wishlist, u: now };
+  }
+  throw CErr('conflict', 409);
+}
+function normW(s) { return String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); }
+
 // ---------- copia locale (IndexedDB) ----------
 var idb = null;
 function idbOpen() {
@@ -320,7 +349,7 @@ function idbClear() { return new Promise(function (res) { if (!idb) return res()
 
 // ---------- dati ----------
 var D = { discs: [], cache: {}, members: [], wishlist: [], history: null, histU: 0, loadedAt: 0 };
-var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all' };
+var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
 // una voce senza membro (o con un membro che non esiste piu) appartiene al profilo principale, come nell'app
@@ -389,7 +418,7 @@ function toLogin(msg) {
   $('em').value = lsGet('plume.email'); $('pw').value = ''; $('lgo').disabled = false;
 }
 function show(tab) {
-  V.tab = tab;
+  V.tab = tab; V.wMsg = null; V.wDel = '';
   document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
   var booting = !$('boot').hidden;
   $('v-coll').hidden = booting || tab !== 'coll';
@@ -508,7 +537,14 @@ function renderProf() {
   if (sel === 'all') h += '<div id="hist"><div class="sec"><div class="hint">Carico gli ascolti…</div></div></div>';
   else {
     var w = wishOf(sel);
-    h += '<div class="sec"><h2>Wishlist</h2>' + (w.length ? w.map(function (x) { return '<div class="h"><div class="ht"><b>' + esc(x.title || '—') + '</b><span>' + esc(x.artist || '') + '</span></div></div>'; }).join('') + '<div class="row"><button class="btn" id="wcopy">Copia lista</button></div><div class="msg ok" id="wmsg"></div>' : '<div class="hint">Nessun disco nella wishlist.</div>') + '</div>';
+    h += '<div class="sec"><h2>Wishlist</h2>' + (w.length ? w.map(function (x) {
+      var del = V.wDel === x.id;
+      return '<div class="h"><div class="ht"><b>' + esc(x.title || '—') + '</b><span>' + esc(x.artist || '') + '</span></div>' +
+        '<button type="button" class="wx' + (del ? ' sure' : '') + '" data-wid="' + esc(x.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi dalla wishlist') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div>';
+    }).join('') : '<div class="hint">Nessun disco nella wishlist.</div>') +
+      '<div class="row">' + (w.length ? '<button class="btn" id="wcopy">Copia lista</button>' : '') + '<button class="btn' + (V.wAdd ? '' : ' primary') + '" id="wadd" type="button">' + (V.wAdd ? 'Chiudi' : '+ Aggiungi disco') + '</button></div>' +
+      (V.wAdd ? '<form id="wform" class="wform" autocomplete="off"><input id="wa" type="text" maxlength="120" placeholder="Artista" aria-label="Artista" autocapitalize="words" spellcheck="false"><input id="wt" type="text" maxlength="160" placeholder="Titolo del disco" aria-label="Titolo del disco" autocapitalize="words" spellcheck="false"><div class="row"><button class="btn primary" id="wgo" type="submit"' + (V.wBusy ? ' disabled' : '') + '>Aggiungi alla wishlist</button></div></form>' : '') +
+      '<div class="msg ' + (V.wMsg ? V.wMsg.c : 'ok') + '" id="wmsg">' + (V.wMsg ? esc(V.wMsg.t) : '') + '</div></div>';
   }
   $('pf').innerHTML = h;
   if (sel === 'all') histView();
@@ -539,7 +575,7 @@ $('lform').addEventListener('submit', async function (ev) {
 document.addEventListener('click', function (ev) {
   var t = ev.target;
   var tab = t.closest('.tab'); if (tab) return show(tab.dataset.tab);
-  var mb = t.closest('.m'); if (mb) { if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
+  var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
   var md = t.closest('[data-md]'); if (md) { V.media = md.dataset.md; return renderColl(); }
   var card = t.closest('.card'); if (card) return openDisc(card.dataset.id);
   if (t.closest('#pv')) return navDisc(-1);
@@ -548,6 +584,21 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#refresh')) return loadAll(true);
   if (t.closest('#logout')) { lsSet('plume.rt', ''); idTok = ''; idbOpen().then(idbClear); D.cache = {}; D.discs = []; D.members = []; D.history = null; toLogin(''); return; }
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
+  if (V.wDel && !t.closest('.wx')) { V.wDel = ''; if (V.tab === 'prof') renderProf(); }
+  if (t.closest('#wadd')) { V.wAdd = !V.wAdd; V.wMsg = null; renderProf(); if (V.wAdd) { var fa = $('wa'); if (fa) fa.focus(); } return; }
+  var wxb = t.closest('.wx');
+  if (wxb) {
+    var wid = wxb.dataset.wid;
+    if (V.wDel !== wid) { V.wDel = wid; V.wMsg = null; return renderProf(); }
+    V.wDel = ''; V.wBusy = true;
+    writeWishlist(function (list) { var i = list.findIndex(function (x) { return x.id === wid; }); if (i < 0) return 'skip'; list.splice(i, 1); }).then(function (r) {
+      D.wishlist = r.wishlist; D.histU = r.u; V.wMsg = { c: 'ok', t: 'Rimosso dalla wishlist.' };
+    }, function (e) {
+      if (e.code === 'relogin') { toLogin(ERR.relogin); return; }
+      V.wMsg = { c: 'bad', t: ERR[e.code] || ERR.api_error };
+    }).then(function () { V.wBusy = false; if (V.tab === 'prof') renderProf(); });
+    return;
+  }
   if (t.closest('#wcopy')) {
     var m = D.members.filter(function (x) { return x.id === V.pOwner; })[0];
     var w = wishOf(V.pOwner);
@@ -556,6 +607,33 @@ document.addEventListener('click', function (ev) {
     var done = function (ok) { var el = $('wmsg'); if (el) { el.className = 'msg ' + (ok ? 'ok' : 'bad'); el.textContent = ok ? 'Lista copiata.' : 'Copia non riuscita: seleziona il testo a mano.'; } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); else done(false);
   }
+});
+document.addEventListener('submit', function (ev) {
+  if (ev.target.id !== 'wform') return;
+  ev.preventDefault();
+  if (V.wBusy) return;
+  var artist = $('wa').value.trim(), title = $('wt').value.trim(), member = V.pOwner;
+  if (!artist || !title) { V.wMsg = { c: 'bad', t: 'Scrivi sia l\'artista sia il titolo.' }; var m0 = $('wmsg'); m0.className = 'msg bad'; m0.textContent = V.wMsg.t; return; }
+  V.wBusy = true; $('wgo').disabled = true; var m1 = $('wmsg'); m1.className = 'msg'; m1.textContent = 'Salvo…';
+  var dup = false;
+  writeWishlist(function (list, p) {
+    var mainId = (p.members && p.members[0] && p.members[0].id) || '';
+    var ids = (p.members || []).map(function (x) { return x.id; });
+    var ownerOfW = function (x) { return x.member && ids.indexOf(x.member) >= 0 ? x.member : mainId; };
+    var na = normW(artist), nt = normW(title);
+    if (list.some(function (x) { return ownerOfW(x) === member && normW(x.artist) === na && normW(x.title) === nt; })) { dup = true; return 'skip'; }
+    list.unshift({ id: 'w' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), artist: artist, title: title, member: member, at: Date.now() });
+  }).then(function (r) {
+    D.wishlist = r.wishlist; D.histU = r.u;
+    V.wMsg = dup ? { c: 'bad', t: 'Questo disco è già nella wishlist.' } : { c: 'ok', t: 'Aggiunto: ' + title + ' – ' + artist + '. Sul PC arriva alla prossima sincronizzazione.' };
+    V.wBusy = false; renderProf();
+    if (!dup) { var fa = $('wa'); if (fa) fa.focus(); }
+    else { var fa2 = $('wa'); if (fa2) { fa2.value = artist; $('wt').value = title; } }
+  }, function (e) {
+    V.wBusy = false;
+    if (e.code === 'relogin') { toLogin(ERR.relogin); return; }
+    var m = $('wmsg'), g = $('wgo'); if (g) g.disabled = false; if (m) { m.className = 'msg bad'; m.textContent = ERR[e.code] || ERR.api_error; }
+  });
 });
 $('q').addEventListener('input', function () { V.q = this.value; renderColl(); });
 $('min').addEventListener('change', function () { V.min = Number(this.value) || 0; renderColl(); });
