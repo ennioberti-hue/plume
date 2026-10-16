@@ -43,11 +43,18 @@ h1,h2,h3{font-family:'Fraunces',Georgia,serif;font-weight:600;margin:0}
 
 /* barra */
 header{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1px solid var(--line);padding-top:env(safe-area-inset-top,0)}
-.hb{display:flex;align-items:center;gap:12px;height:54px}
-.logo{font:600 24px 'Fraunces',Georgia,serif;margin-right:auto}
-.tabs{display:flex;gap:4px}
-.tab{border:0;background:transparent;padding:8px 14px;border-radius:999px;color:var(--soft);font-weight:600}
+.hb{position:relative;display:flex;align-items:center;gap:12px;height:54px}
+.logo{font:600 24px 'Fraunces',Georgia,serif}
+.cur{margin-right:auto;color:var(--soft);font-weight:600;font-size:15px;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cur::before{content:"·";margin-right:10px;color:var(--line)}
+#menu{position:absolute;top:calc(100% + 4px);right:0;z-index:30;min-width:210px;max-width:calc(100vw - 32px);background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow),0 12px 32px rgba(0,0,0,.18);padding:6px}
+#menu[hidden]{display:none}
+.tabs{display:flex;flex-direction:column;gap:2px}
+.tab,.mi{display:flex;align-items:center;gap:12px;width:100%;border:0;background:transparent;padding:12px 14px;border-radius:10px;color:var(--ink);font:inherit;font-weight:600;text-align:left}
 .tab.on{background:var(--accent);color:var(--accent-ink)}
+.mi svg{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mi.spin svg{animation:sp 1s linear infinite}
+.msep{height:1px;background:var(--line);margin:6px 8px}
 .ib{width:38px;height:38px;border-radius:50%;border:1px solid var(--line);background:transparent;display:inline-flex;align-items:center;justify-content:center}
 .ib svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 .ib.spin svg{animation:sp 1s linear infinite}
@@ -154,8 +161,6 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .nwd h3{font-size:14px;color:var(--soft);margin:14px 0 6px}
 .nwd ol{margin:0;padding-left:22px}
 .nwd li{padding:2px 0}
-@media (max-width:440px){.hb{gap:4px}.logo{font-size:18px}.tabs{gap:2px}.tab{padding:6px 7px;font-size:13px}.ib{width:32px;height:32px;flex:none}.ib svg{width:16px;height:16px}}
-@media (max-width:350px){.logo{display:none}.tabs{margin-right:auto}}
 .link{border:0;background:transparent;color:var(--accent);padding:6px 0;font-weight:600}
 
 #boot{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:10px;color:var(--soft)}
@@ -183,13 +188,18 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
     <div class="wrap">
       <div class="hb">
         <div class="logo">Plume</div>
-        <nav class="tabs" aria-label="Sezioni">
-          <button class="tab on" data-tab="coll">Collezione</button>
-          <button class="tab" data-tab="prof">Profilo</button>
-          <button class="tab" data-tab="news">News</button>
-        </nav>
-        <button class="ib" id="refresh" title="Aggiorna" aria-label="Aggiorna"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
-        <button class="ib" id="logout" title="Esci" aria-label="Esci"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
+        <div class="cur" id="cur">Collezione</div>
+        <button class="ib" id="menubtn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
+        <div id="menu" role="menu" hidden>
+          <nav class="tabs" aria-label="Sezioni">
+            <button class="tab on" role="menuitem" data-tab="coll">Collezione</button>
+            <button class="tab" role="menuitem" data-tab="prof">Profilo</button>
+            <button class="tab" role="menuitem" data-tab="news">News</button>
+          </nav>
+          <div class="msep"></div>
+          <button class="mi" id="refresh" role="menuitem"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg><span>Aggiorna</span></button>
+          <button class="mi" id="logout" role="menuitem"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg><span>Esci</span></button>
+        </div>
       </div>
       <div id="status"></div>
     </div>
@@ -443,6 +453,7 @@ function toLogin(msg) {
 }
 function show(tab) {
   V.tab = tab; V.wMsg = null; V.wDel = '';
+  var curEl = $('cur'); if (curEl) curEl.textContent = { coll: 'Collezione', prof: 'Profilo', news: 'News' }[tab] || '';
   document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
   var booting = !$('boot').hidden;
   $('v-coll').hidden = booting || tab !== 'coll';
@@ -597,7 +608,7 @@ function renderNews() {
   var nn = n.n || {}, last = (n.last || []).slice(0, Number(nn.last) || 10), band = (n.band || []).slice(0, Number(nn.band) || 10);
   h += '<div class="hint nwup">' + (n.updated ? 'Aggiornato ' + when(n.updated) + ' dal PC' : 'Nessuna ricerca ancora fatta dal PC') + ' · solo consultazione</div>';
   h += '<div class="sec"><h2>Last news</h2>' + (last.length || (n.sources || []).length ? newsList(last, false) : '<div class="hint">Nessuna fonte impostata.</div>') + '</div>';
-  h += '<div class="sec"><h2>Your band</h2>' + (band.length || (n.bands || []).length ? newsList(band, true) : '<div class="hint">Nessuna band preferita.</div>') + '</div>';
+  h += '<div class="sec"><h2>My band</h2>' + (band.length || (n.bands || []).length ? newsList(band, true) : '<div class="hint">Nessuna band preferita.</div>') + '</div>';
   var src = n.sources || [], bds = n.bands || [];
   if (src.length || bds.length) {
     h += '<details class="sec nwd"><summary>Fonti e band (in ordine di importanza)</summary>' +
@@ -696,6 +707,17 @@ document.addEventListener('submit', function (ev) {
 $('q').addEventListener('input', function () { V.q = this.value; renderColl(); });
 $('min').addEventListener('change', function () { V.min = Number(this.value) || 0; renderColl(); });
 $('sort').addEventListener('change', function () { V.sort = this.value; renderColl(); });
+function menuOpen(on) {
+  var m = $('menu'), b = $('menubtn'); if (!m || !b) return;
+  m.hidden = !on; b.setAttribute('aria-expanded', on ? 'true' : 'false');
+}
+document.addEventListener('click', function (e) {
+  var t = e.target;
+  if (t.closest('#menubtn')) { menuOpen($('menu').hidden); return; }
+  if (t.closest('#menu button')) { menuOpen(false); return; }
+  if (!t.closest('#menu')) menuOpen(false);
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && $('menu') && !$('menu').hidden) { menuOpen(false); $('menubtn').focus(); } });
 document.addEventListener('keydown', function (e) {
   if ($('sheet').hidden) return;
   if (e.key === 'Escape') closeDisc();
