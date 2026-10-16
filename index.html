@@ -143,6 +143,19 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .wform{display:flex;flex-direction:column;gap:8px;margin-top:12px}
 .wform input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px}
 .wform .row{margin-top:2px}
+.ni{display:flex;flex-direction:column;gap:3px;padding:11px 0;border-top:1px solid var(--line);color:inherit;text-decoration:none}
+.ni:first-of-type{border-top:0}
+.ni b{font-weight:600;line-height:1.35}
+.ni span{color:var(--soft);font-size:13px}
+.ni .bn{color:var(--accent);font-weight:600}
+.nd{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--accent);margin-right:8px;vertical-align:middle;position:relative;top:-1px}
+.nwup{margin-bottom:12px}
+.nwd summary{cursor:pointer;font-weight:600;padding:2px 0}
+.nwd h3{font-size:14px;color:var(--soft);margin:14px 0 6px}
+.nwd ol{margin:0;padding-left:22px}
+.nwd li{padding:2px 0}
+@media (max-width:440px){.hb{gap:4px}.logo{font-size:18px}.tabs{gap:2px}.tab{padding:6px 7px;font-size:13px}.ib{width:32px;height:32px;flex:none}.ib svg{width:16px;height:16px}}
+@media (max-width:350px){.logo{display:none}.tabs{margin-right:auto}}
 .link{border:0;background:transparent;color:var(--accent);padding:6px 0;font-weight:600}
 
 #boot{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:10px;color:var(--soft)}
@@ -173,6 +186,7 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
         <nav class="tabs" aria-label="Sezioni">
           <button class="tab on" data-tab="coll">Collezione</button>
           <button class="tab" data-tab="prof">Profilo</button>
+          <button class="tab" data-tab="news">News</button>
         </nav>
         <button class="ib" id="refresh" title="Aggiorna" aria-label="Aggiorna"><svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></svg></button>
         <button class="ib" id="logout" title="Esci" aria-label="Esci"><svg viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg></button>
@@ -213,6 +227,10 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
     <section id="v-prof" hidden>
       <div class="filters"><div class="mem" id="p-mem"></div></div>
       <div class="pf" id="pf"></div>
+    </section>
+
+    <section id="v-news" hidden>
+      <div class="pf" id="nw"></div>
     </section>
   </main>
 </div>
@@ -348,7 +366,7 @@ function idbWrite(put, del) { return new Promise(function (res) { if (!idb) retu
 function idbClear() { return new Promise(function (res) { if (!idb) return res(); try { var tx = idb.transaction('discs', 'readwrite'); tx.objectStore('discs').clear(); tx.oncomplete = tx.onerror = function () { res(); }; } catch (e) { res(); } }); }
 
 // ---------- dati ----------
-var D = { discs: [], cache: {}, members: [], wishlist: [], history: null, histU: 0, loadedAt: 0 };
+var D = { discs: [], cache: {}, members: [], wishlist: [], history: null, histU: 0, loadedAt: 0, news: null };
 var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
@@ -367,6 +385,7 @@ async function loadAll(manual) {
     if (!D.discs.length) {
       var cached = await idbAll();
       cached.forEach(function (x) { D.cache[x.id] = x; });
+      if (!D.news) { try { D.news = JSON.parse(lsGet('plume.news') || 'null'); } catch (e) {} }
       if (cached.length) { rebuild(); showMain(); }
     }
     setStatus('Controllo gli aggiornamenti…');
@@ -391,6 +410,11 @@ async function loadAll(manual) {
       D.members = Array.isArray(p.members) ? p.members : []; D.wishlist = Array.isArray(p.wishlist) ? p.wishlist : [];
       if (D.histU !== pf.u) { D.history = null; D.histU = pf.u; D.nh = pf.nh || 0; }
     }
+    try {                                                     // News & Fandom: scritte dall'app sul PC, qui solo lettura
+      var nj = await fs('GET', '/meta/news').catch(function (e) { if (e.status === 404) return null; throw e; });
+      if (nj && nj.fields) { var nf = fromFields(nj.fields); D.news = JSON.parse(nf.d || 'null'); lsSet('plume.news', nf.d || ''); }
+      else if (nj === null) { D.news = null; lsSet('plume.news', ''); }
+    } catch (e) { if (e.code === 'relogin') throw e; }
     D.loadedAt = Date.now();
     rebuild(); showMain(); renderAll();
     setStatus(D.discs.length + ' dischi · aggiornato alle ' + new Date().toLocaleTimeString('it-IT', { hour: '2-digit', minute: '2-digit' }));
@@ -423,6 +447,7 @@ function show(tab) {
   var booting = !$('boot').hidden;
   $('v-coll').hidden = booting || tab !== 'coll';
   $('v-prof').hidden = booting || tab !== 'prof';
+  $('v-news').hidden = booting || tab !== 'news';
   renderAll(); window.scrollTo(0, 0);
 }
 function avatar(m) { return m.photo ? '<img src="' + esc(m.photo) + '" alt="">' : esc((m.name || '?').trim().charAt(0).toUpperCase()); }
@@ -438,7 +463,7 @@ function stars(n) {
   var s = ''; for (var i = 1; i <= 5; i++) s += i <= n ? '★' : '<i>★</i>';
   return '<span class="stars" aria-label="' + n + ' stelle">' + s + '</span>';
 }
-function renderAll() { if (V.tab === 'coll') renderColl(); else renderProf(); }
+function renderAll() { if (V.tab === 'coll') renderColl(); else if (V.tab === 'news') renderNews(); else renderProf(); }
 
 function renderColl() {
   memberStrip($('c-mem'), V.owner);
@@ -549,6 +574,39 @@ function renderProf() {
   $('pf').innerHTML = h;
   if (sel === 'all') histView();
 }
+function ago(ms) {
+  if (!ms) return '';
+  var d = Date.now() - ms, m = Math.round(d / 60000);
+  if (d < 0 || m < 1) return 'adesso';
+  if (m < 60) return m + ' min fa';
+  var h = Math.round(m / 60); if (h < 24) return h + (h === 1 ? ' ora fa' : ' ore fa');
+  var g = Math.round(h / 24); if (g < 8) return g + (g === 1 ? ' giorno fa' : ' giorni fa');
+  return new Date(ms).toLocaleDateString('it-IT', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+function newsList(items, band) {
+  if (!items.length) return '<div class="hint">Nessuna notizia.</div>';
+  return items.map(function (it) {
+    var url = /^https?:\/\//i.test(it.url || '') ? it.url : '';
+    var meta = [band && it.band ? '<span class="bn">' + esc(it.band) + '</span>' : '', it.src ? esc(it.src) : '', ago(it.date)].filter(Boolean).join(' · ');
+    return '<a class="ni" href="' + esc(url) + '" target="_blank" rel="noopener noreferrer"><b>' + (it.fresh ? '<i class="nd" title="Nuova"></i>' : '') + esc(it.title || '—') + '</b><span>' + meta + '</span></a>';
+  }).join('');
+}
+function renderNews() {
+  var n = D.news, h = '';
+  if (!n) { $('nw').innerHTML = '<div class="sec"><h2>News &amp; Fandom</h2><div class="hint">Non c\'è ancora niente. Apri «News &amp; Fandom» nell\'app sul PC, aggiungi fonti e band e premi «Cerca novità»: le liste appariranno qui.</div></div>'; return; }
+  var nn = n.n || {}, last = (n.last || []).slice(0, Number(nn.last) || 10), band = (n.band || []).slice(0, Number(nn.band) || 10);
+  h += '<div class="hint nwup">' + (n.updated ? 'Aggiornato ' + when(n.updated) + ' dal PC' : 'Nessuna ricerca ancora fatta dal PC') + ' · solo consultazione</div>';
+  h += '<div class="sec"><h2>Last news</h2>' + (last.length || (n.sources || []).length ? newsList(last, false) : '<div class="hint">Nessuna fonte impostata.</div>') + '</div>';
+  h += '<div class="sec"><h2>Your band</h2>' + (band.length || (n.bands || []).length ? newsList(band, true) : '<div class="hint">Nessuna band preferita.</div>') + '</div>';
+  var src = n.sources || [], bds = n.bands || [];
+  if (src.length || bds.length) {
+    h += '<details class="sec nwd"><summary>Fonti e band (in ordine di importanza)</summary>' +
+      (src.length ? '<h3>Fonti</h3><ol>' + src.map(function (x) { return '<li>' + esc(x.name || String(x.url || '').replace(/^https?:\/\//, '').replace(/\/$/, '')) + '</li>'; }).join('') + '</ol>' : '') +
+      (bds.length ? '<h3>Band preferite</h3><ol>' + bds.map(function (x) { return '<li>' + esc(x.name) + '</li>'; }).join('') + '</ol>' : '') +
+      '<div class="hint">Si modificano dall\'app sul PC.</div></details>';
+  }
+  $('nw').innerHTML = h;
+}
 var histShown = 20;
 async function histView() {
   var box = $('hist'); if (!box) return;
@@ -582,7 +640,7 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#nx')) return navDisc(1);
   if (t.closest('#xs') || t === $('sheet')) return closeDisc();
   if (t.closest('#refresh')) return loadAll(true);
-  if (t.closest('#logout')) { lsSet('plume.rt', ''); idTok = ''; idbOpen().then(idbClear); D.cache = {}; D.discs = []; D.members = []; D.history = null; toLogin(''); return; }
+  if (t.closest('#logout')) { lsSet('plume.rt', ''); idTok = ''; idbOpen().then(idbClear); D.cache = {}; D.discs = []; D.members = []; D.history = null; D.news = null; lsSet('plume.news', ''); toLogin(''); return; }
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
   if (V.wDel && !t.closest('.wx')) { V.wDel = ''; if (V.tab === 'prof') renderProf(); }
   if (t.closest('#wadd')) { V.wAdd = !V.wAdd; V.wMsg = null; renderProf(); if (V.wAdd) { var fa = $('wa'); if (fa) fa.focus(); } return; }
