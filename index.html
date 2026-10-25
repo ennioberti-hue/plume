@@ -158,6 +158,28 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 
 #boot{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;gap:10px;color:var(--soft)}
 .dots{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:sp .9s linear infinite}
+
+/* aggiungi un disco */
+#add{position:fixed;inset:0;z-index:60;background:rgba(20,17,15,.55);display:flex;align-items:flex-end;justify-content:center}
+@media (min-width:700px){#add{align-items:center}}
+.cam{position:relative;border-radius:12px;overflow:hidden;background:#000;aspect-ratio:4/3;max-height:46vh;width:100%}
+.cam video{width:100%;height:100%;object-fit:cover;display:block}
+.cam .aim{position:absolute;left:8%;right:8%;top:30%;bottom:30%;border:2px solid rgba(255,255,255,.9);border-radius:10px;box-shadow:0 0 0 999px rgba(0,0,0,.3);pointer-events:none}
+.alab{display:block;font-weight:600;font-size:13px;color:var(--soft);margin:2px 0 0}
+.asep{display:flex;align-items:center;gap:10px;color:var(--soft);font-size:12.5px;margin:16px 0 2px}
+.asep::before,.asep::after{content:"";flex:1;height:1px;background:var(--line)}
+.alist{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.res{display:flex;gap:12px;align-items:center;width:100%;padding:8px;border:1px solid var(--line);border-radius:12px;background:var(--card);text-align:left;color:var(--ink)}
+.res .th{width:56px;height:56px;border-radius:8px}
+.res .ht b{white-space:normal;line-height:1.25}
+.res .ht span{white-space:normal}
+.acov{width:132px;height:132px;border-radius:10px;background:var(--line);flex:0 0 auto;overflow:hidden;display:flex;align-items:center;justify-content:center;text-align:center;color:var(--soft);font-size:12.5px;padding:6px;box-shadow:var(--shadow)}
+.acov img{width:100%;height:100%;object-fit:cover;display:block}
+.wform select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px}
+.wform input{margin-bottom:0}
+.afields{display:flex;flex-direction:column;gap:6px;margin-top:14px}
+@media (max-width:420px){.acov{width:104px;height:104px}}
+.aload{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:30vh;gap:10px;color:var(--soft)}
 </style>
 </head>
 <body>
@@ -182,6 +204,7 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
       <div class="hb">
         <div class="logo">Plume</div>
         <div class="cur" id="cur">Collezione</div>
+        <button class="ib" id="addbtn" type="button" aria-label="Aggiungi un disco" title="Aggiungi un disco"><svg viewBox="0 0 24 24"><path d="M3 7V5a1 1 0 0 1 1-1h2M18 4h2a1 1 0 0 1 1 1v2M21 17v2a1 1 0 0 1-1 1h-2M6 20H4a1 1 0 0 1-1-1v-2"/><path d="M8 8v8M11 8v8M14 8v8M16.5 8v8"/></svg></button>
         <button class="ib" id="menubtn" type="button" aria-label="Menu" aria-haspopup="true" aria-expanded="false" aria-controls="menu"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
         <div id="menu" role="menu" hidden>
           <nav class="tabs" aria-label="Sezioni">
@@ -234,6 +257,8 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
   </main>
 </div>
 
+<div id="add" hidden><div class="panel" id="addp" role="dialog" aria-modal="true" aria-label="Aggiungi un disco"></div></div>
+<input type="file" id="a-file" accept="image/*" hidden>
 <div id="sheet" hidden><div class="panel" id="panel" role="dialog" aria-modal="true"></div></div>
 
 <script>
@@ -690,6 +715,326 @@ document.addEventListener('keydown', function (e) {
   }, { passive: true });
   panel.addEventListener('touchcancel', function () { ok = false; }, { passive: true });
 })();
+
+// ---------- aggiungere un disco con lo scanner ----------
+var MBB = 'https://musicbrainz.org/ws/2', CAAB = 'https://coverartarchive.org';
+if (Q.get('mb') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) { MBB = Q.get('mb') + '/ws/2'; CAAB = Q.get('mb') + '/caa'; }
+var ZXURL = 'https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js';
+if (Q.get('zx') && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) ZXURL = Q.get('zx');
+ERR.mb_busy = 'MusicBrainz è occupato: riprova tra qualche secondo.';
+ERR.mb_error = 'MusicBrainz non risponde: riprova più tardi.';
+ERR.exists = 'Esiste già un disco con questo codice interno: riprova.';
+
+function toFs(v) {
+  if (v === null || v === undefined) return { nullValue: null };
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') return Number.isInteger(v) ? { integerValue: String(v) } : { doubleValue: v };
+  if (Array.isArray(v)) return { arrayValue: { values: v.map(toFs) } };
+  return { mapValue: { fields: toFields(v) } };
+}
+function toFields(o) { var f = {}; Object.keys(o).forEach(function (k) { if (o[k] !== undefined) f[k] = toFs(o[k]); }); return f; }
+// stessa serializzazione stabile dell'app per PC: serve a calcolare l'impronta (h) del disco
+function stable(v) {
+  if (v === undefined) return 'null';
+  if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+  if (v && typeof v === 'object') return '{' + Object.keys(v).sort().map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
+  return JSON.stringify(v);
+}
+async function sha1hex(s) {
+  try {
+    var b = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(s));
+    return Array.prototype.map.call(new Uint8Array(b), function (x) { return ('0' + x.toString(16)).slice(-2); }).join('');
+  } catch (e) { return ''; }
+}
+async function mbGet(path) {
+  var r;
+  try { r = await fetch(MBB + path); } catch (e) { throw CErr('offline', 0, 'Nessuna connessione'); }
+  if (r.status === 503 || r.status === 429) throw CErr('mb_busy', r.status);
+  if (!r.ok) throw CErr('mb_error', r.status);
+  try { return await r.json(); } catch (e) { throw CErr('mb_error', 0); }
+}
+function acName(ac) { return (ac || []).map(function (x) { return (x.name || (x.artist && x.artist.name) || '') + (x.joinphrase || ''); }).join('').trim(); }
+function mapMedia(media) {
+  var out = [];
+  (media || []).forEach(function (m) {
+    var f = String(m.format || ''), k = /vinyl|vinile/i.test(f) ? 'vinile' : (/dvd/i.test(f) ? 'dvd' : (/digital|file/i.test(f) ? '' : 'cd'));
+    if (k && out.indexOf(k) < 0) out.push(k);
+  });
+  return out.length ? out : ['cd'];
+}
+function normRel(r) {
+  var li = (r['label-info'] || []).filter(function (l) { return l && l.label && l.label.name; })[0];
+  return { id: r.id, rg: (r['release-group'] || {}).id || '', title: r.title || '', artist: acName(r['artist-credit']), label: li ? li.label.name : '', year: String(r.date || '').slice(0, 4), media: mapMedia(r.media), country: r.country || '' };
+}
+function dedupRel(list) {
+  var seen = {}, out = [];
+  list.forEach(function (r) { var k = [r.artist, r.title, r.label, r.year, r.media.join('+')].join('|').toLowerCase(); if (!seen[k]) { seen[k] = 1; out.push(r); } });
+  return out.slice(0, 8);
+}
+async function findByCode(code) {
+  var q = 'barcode:' + code;
+  if (code.length === 13 && code.charAt(0) === '0') q += ' OR barcode:' + code.slice(1);
+  else if (code.length === 12) q += ' OR barcode:0' + code;
+  var j = await mbGet('/release/?query=' + encodeURIComponent(q) + '&fmt=json&limit=15');
+  return dedupRel((j.releases || []).map(normRel));
+}
+async function findByName(artist, title) {
+  var lq = function (s) { return '"' + s.replace(/["\\]/g, ' ').trim() + '"'; }, parts = [];
+  if (artist) parts.push('artist:' + lq(artist));
+  if (title) parts.push('release:' + lq(title));
+  var j = await mbGet('/release/?query=' + encodeURIComponent(parts.join(' AND ')) + '&fmt=json&limit=25');
+  return dedupRel((j.releases || []).map(normRel));
+}
+async function genreOf(rg) {
+  if (!rg) return '';
+  try {
+    var j = await mbGet('/release-group/' + encodeURIComponent(rg) + '?inc=genres&fmt=json');
+    var g = (j.genres || []).slice().sort(function (a, b) { return (b.count || 0) - (a.count || 0); })[0];
+    return g && g.name ? g.name.charAt(0).toUpperCase() + g.name.slice(1) : '';
+  } catch (e) { return ''; }
+}
+// porta un'immagine a 320x320 JPEG, come fa l'app sul PC
+function imgToCover(src, cors) {
+  return new Promise(function (res) {
+    var im = new Image(), t = setTimeout(function () { res(''); }, 15000);
+    if (cors) im.crossOrigin = 'anonymous';
+    im.onload = function () {
+      clearTimeout(t);
+      try {
+        var size = 320, c = document.createElement('canvas'); c.width = size; c.height = size;
+        var x = c.getContext('2d'), sc = Math.max(size / im.width, size / im.height), w = im.width * sc, h = im.height * sc;
+        x.drawImage(im, (size - w) / 2, (size - h) / 2, w, h);
+        res(c.toDataURL('image/jpeg', 0.85));
+      } catch (e) { res(''); }
+    };
+    im.onerror = function () { clearTimeout(t); res(''); };
+    im.src = src;
+  });
+}
+async function coverOf(rel) {
+  var c = await imgToCover(CAAB + '/release/' + encodeURIComponent(rel.id) + '/front-500', true);
+  if (!c && rel.rg) c = await imgToCover(CAAB + '/release-group/' + encodeURIComponent(rel.rg) + '/front-500', true);
+  return c;
+}
+
+// ---------- fotocamera e lettura del codice ----------
+var SC = { stream: null, timer: 0, det: null, rd: null, tok: 0, cv: null, zx: null };
+function loadZX() {
+  if (window.ZXing) return Promise.resolve();
+  if (SC.zx) return SC.zx;
+  SC.zx = new Promise(function (res, rej) {
+    var s = document.createElement('script'); s.src = ZXURL; s.async = true;
+    s.onload = function () { window.ZXing ? res() : rej(new Error('zx')); };
+    s.onerror = function () { SC.zx = null; rej(new Error('zx')); };
+    document.head.appendChild(s);
+  });
+  return SC.zx;
+}
+function camStop() {
+  SC.tok++; clearTimeout(SC.timer);
+  if (SC.stream) { SC.stream.getTracks().forEach(function (t) { t.stop(); }); SC.stream = null; }
+  var v = $('camv'); if (v) { try { v.srcObject = null; } catch (e) {} }
+}
+function zxDecode(v) {
+  var c = SC.cv || (SC.cv = document.createElement('canvas')), w = v.videoWidth, h = v.videoHeight, s = Math.min(1, 960 / w);
+  c.width = Math.round(w * s); c.height = Math.round(h * s);
+  c.getContext('2d', { willReadFrequently: true }).drawImage(v, 0, 0, c.width, c.height);
+  if (!SC.rd) {
+    var hs = new Map(), F = ZXing.BarcodeFormat;
+    hs.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [F.EAN_13, F.UPC_A, F.EAN_8, F.UPC_E]);
+    hs.set(ZXing.DecodeHintType.TRY_HARDER, true);
+    SC.rd = new ZXing.MultiFormatReader(); SC.rd.setHints(hs);
+  }
+  try { return SC.rd.decode(new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(new ZXing.HTMLCanvasElementLuminanceSource(c)))).getText(); }
+  catch (e) { return ''; }
+}
+async function camBegin() {
+  var tok = ++SC.tok, v = $('camv'); if (!v) return;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) throw new Error('nocam');
+    var st = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false });
+    if (tok !== SC.tok) { st.getTracks().forEach(function (t) { t.stop(); }); return; }
+    SC.stream = st; v.srcObject = st; v.muted = true; v.setAttribute('playsinline', '');
+    try { await v.play(); } catch (e) {}
+    SC.det = null;
+    if ('BarcodeDetector' in window) {
+      try {
+        var fm = await BarcodeDetector.getSupportedFormats();
+        var want = ['ean_13', 'upc_a', 'ean_8', 'upc_e'].filter(function (f) { return fm.indexOf(f) > -1; });
+        if (want.indexOf('ean_13') > -1) SC.det = new BarcodeDetector({ formats: want });
+      } catch (e) {}
+    }
+    if (!SC.det) await loadZX();
+    if (tok !== SC.tok) return;
+    if (A && !A.msg) setAMsg('Inquadra il codice a barre del disco.', '');
+    camTick(tok);
+  } catch (e) {
+    if (tok !== SC.tok) return;
+    camStop();
+    var box = $('cam'); if (box) box.hidden = true;
+    if (A && !A.msg) setAMsg(e && e.name === 'NotAllowedError' ? 'Accesso alla fotocamera negato: scrivi il codice qui sotto.' : 'Lo scanner non è disponibile qui: scrivi il codice qui sotto.', 'bad');
+  }
+}
+async function camTick(tok) {
+  if (tok !== SC.tok) return;
+  var v = $('camv'), code = '';
+  try {
+    if (v && v.readyState >= 2 && v.videoWidth) {
+      if (SC.det) { var r = await SC.det.detect(v); if (r && r.length) code = r[0].rawValue; }
+      else code = zxDecode(v);
+    }
+  } catch (e) {}
+  if (tok !== SC.tok) return;
+  if (code && A && code !== A.lastCode && /^\d{8,14}$/.test(code)) { try { navigator.vibrate && navigator.vibrate(40); } catch (e) {} runSearch('code', code); return; }
+  SC.timer = setTimeout(function () { camTick(tok); }, SC.det ? 120 : 220);
+}
+
+// ---------- schermata "Aggiungi un disco" ----------
+var A = null;
+function setAMsg(t, c) { if (A) { A.msg = t; A.msgc = c || ''; } var m = $('amsg'); if (m) { m.className = 'msg ' + (c || ''); m.textContent = t || ''; } }
+function aHead(title) { return '<div class="pbar"><span class="pos">' + esc(title) + '</span><div class="pbtns"><button class="ib" type="button" data-a="close" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>'; }
+function openAdd() {
+  A = { step: '', msg: '', msgc: '', results: [], sel: null, cover: '', coverState: '', genre: '', media: ['cd'], owner: '', forceOk: false, busy: false, lastCode: '' };
+  $('add').hidden = false; document.body.style.overflow = 'hidden';
+  goStart('', '');
+}
+function closeAdd() {
+  camStop(); A = null; $('add').hidden = true;
+  if ($('sheet').hidden) document.body.style.overflow = '';
+}
+function goStart(msg, cls) {
+  camStop(); if (!A) return;
+  A.step = 'start'; A.msg = msg || ''; A.msgc = cls || '';
+  $('addp').innerHTML = aHead('Aggiungi un disco') +
+    '<div class="cam" id="cam"><video id="camv" playsinline muted></video><div class="aim"></div></div>' +
+    '<div class="msg ' + esc(A.msgc) + '" id="amsg" role="status">' + esc(A.msg) + '</div>' +
+    '<form id="aform-code" class="wform" autocomplete="off"><label class="alab" for="a-code">Oppure scrivi il codice a barre</label><input id="a-code" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="14" placeholder="Per esempio 602547924870"><div class="row"><button class="btn primary" type="submit">Cerca il codice</button></div></form>' +
+    '<div class="asep">oppure</div>' +
+    '<form id="aform-name" class="wform" autocomplete="off"><label class="alab" for="a-art">Cerca per nome</label><input id="a-art" type="text" maxlength="120" placeholder="Artista" autocapitalize="words" spellcheck="false"><input id="a-tit" type="text" maxlength="160" placeholder="Titolo del disco" autocapitalize="words" spellcheck="false"><div class="row"><button class="btn" type="submit">Cerca</button></div></form>';
+  $('addp').scrollTop = 0;
+  camBegin();
+}
+async function runSearch(kind, a, b) {
+  if (!A) return;
+  camStop(); A.step = 'busy'; if (kind === 'code') A.lastCode = a;
+  $('addp').innerHTML = aHead('Aggiungi un disco') + '<div class="aload"><div class="dots"></div><div>Cerco su MusicBrainz…</div></div>';
+  var list;
+  try { list = kind === 'code' ? await findByCode(a) : await findByName(a, b); }
+  catch (e) { if (!A) return; goStart(ERR[e.code] || ERR.mb_error, 'bad'); return; }
+  if (!A) return;
+  if (!list.length) { goStart(kind === 'code' ? 'Nessun disco con il codice ' + a + ' su MusicBrainz. Prova a cercarlo per nome.' : 'Nessun risultato: controlla artista e titolo.', 'bad'); return; }
+  A.results = list; A.step = 'results';
+  var fmt = function (m) { return m === 'vinile' ? 'Vinile' : (m === 'dvd' ? 'DVD' : 'CD'); };
+  $('addp').innerHTML = aHead(list.length === 1 ? 'Ho trovato questo disco' : 'Scegli il disco') +
+    '<div class="alist">' + list.map(function (r, i) {
+      return '<button type="button" class="res" data-a="pick" data-i="' + i + '"><span class="th"><img alt="" loading="lazy" src="' + esc(CAAB + '/release/' + r.id + '/front-250') + '" onerror="this.style.visibility=\'hidden\'"></span><span class="ht"><b>' + esc(r.title || '—') + '</b><span>' + esc(r.artist || 'Sconosciuto') + '</span><span>' + esc([r.label, r.year, r.media.map(fmt).join(' + '), r.country].filter(Boolean).join(' · ')) + '</span></span></button>';
+    }).join('') + '</div><div class="row"><button class="btn" type="button" data-a="back">Indietro</button></div>';
+  $('addp').scrollTop = 0;
+}
+function pickRel(i) {
+  var r = A && A.results[i]; if (!r) return;
+  A.sel = r; A.step = 'confirm'; A.cover = ''; A.coverState = 'load'; A.genre = ''; A.media = r.media.slice(); A.forceOk = false; A.busy = false;
+  A.owner = (V.owner !== 'all' && D.members.some(function (m) { return m.id === V.owner; })) ? V.owner : (D.members[0] ? D.members[0].id : '');
+  renderConfirm('');
+  var mine = r;
+  coverOf(r).then(function (c) { if (A && A.sel === mine) { A.cover = c; A.coverState = c ? 'ok' : 'none'; paintCover(); } });
+  genreOf(r.rg).then(function (g) { if (A && A.sel === mine && g) { A.genre = g; var gi = $('a-genre'); if (gi && !gi.value) gi.value = g; } });
+}
+function paintCover() {
+  var el = $('acov'); if (!el || !A) return;
+  el.innerHTML = A.cover ? '<img alt="" src="' + esc(A.cover) + '">' : (A.coverState === 'load' ? 'Carico la copertina…' : 'Nessuna copertina');
+}
+function renderConfirm(msg) {
+  var r = A.sel, mm = [['cd', 'CD'], ['vinile', 'Vinile'], ['dvd', 'DVD']];
+  $('addp').innerHTML = aHead('Controlla e aggiungi') +
+    '<div class="dh"><div class="acov" id="acov"></div><div><div class="by">' + esc(r.artist || 'Sconosciuto') + '</div><h2>' + esc(r.title || '—') + '</h2><div class="tags">' + (r.year ? '<span class="tag">' + esc(r.year) + '</span>' : '') + '</div><div class="row"><button class="link" type="button" data-a="photo">Scegli un\'altra copertina</button></div></div></div>' +
+    '<form id="aform-save" class="wform afields" autocomplete="off">' +
+    '<label class="alab" for="a-artist">Artista</label><input id="a-artist" type="text" maxlength="120" value="' + esc(r.artist) + '">' +
+    '<label class="alab" for="a-title">Titolo</label><input id="a-title" type="text" maxlength="160" value="' + esc(r.title) + '">' +
+    '<label class="alab" for="a-label">Etichetta</label><input id="a-label" type="text" maxlength="120" value="' + esc(r.label) + '">' +
+    '<label class="alab" for="a-genre">Genere</label><input id="a-genre" type="text" maxlength="60" value="' + esc(A.genre) + '" placeholder="es. Alternative rock">' +
+    '<span class="alab">Supporto</span><div class="chips" id="a-sup">' + mm.map(function (m) { return '<button type="button" class="chip' + (A.media.indexOf(m[0]) > -1 ? ' on' : '') + '" data-a="sup" data-s="' + m[0] + '">' + m[1] + '</button>'; }).join('') + '</div>' +
+    (D.members.length ? '<label class="alab" for="a-owner">Nella collezione di</label><select id="a-owner">' + D.members.map(function (m) { return '<option value="' + esc(m.id) + '"' + (m.id === A.owner ? ' selected' : '') + '>' + esc(m.name) + '</option>'; }).join('') + '</select>' : '') +
+    '<div class="row"><button class="btn primary" id="a-go" type="submit">Aggiungi al catalogo</button><button class="btn" type="button" data-a="back">Indietro</button></div>' +
+    '<div class="msg ' + (msg ? 'bad' : '') + '" id="amsg" role="status">' + esc(msg || '') + '</div></form>';
+  paintCover(); $('addp').scrollTop = 0;
+}
+async function saveNew() {
+  if (!A || A.busy) return;
+  var artist = $('a-artist').value.trim(), title = $('a-title').value.trim();
+  if (!artist || !title) { setAMsg('Scrivi sia l\'artista sia il titolo.', 'bad'); return; }
+  var owner = $('a-owner') ? $('a-owner').value : '';
+  var na = normW(artist), nt = normW(title);
+  var dup = D.discs.filter(function (x) { return normW(x.artist) === na && normW(x.title) === nt; })[0];
+  if (dup && !A.forceOk) {
+    A.forceOk = true; $('a-go').textContent = 'Aggiungi comunque';
+    setAMsg('Hai già questo disco nel catalogo. Premi "Aggiungi comunque" se è un\'altra copia.', 'bad'); return;
+  }
+  A.busy = true; $('a-go').disabled = true; setAMsg('Salvo…', '');
+  var now = Date.now();
+  var rec = { id: 'c' + now.toString(36) + Math.floor(Math.random() * 1e4).toString(36), artist: artist, title: title, genre: $('a-genre').value.trim(), media: A.media.length ? A.media : ['cd'], owner: owner || undefined, label: $('a-label').value.trim(), note: '', cover: A.cover || '', rating: 0 };
+  if (!rec.owner) delete rec.owner;
+  try {
+    var fields = toFields(rec); fields.u = { integerValue: String(now) }; fields.h = { stringValue: await sha1hex(stable(rec)) };
+    await fs('PATCH', '/discs/' + encodeURIComponent(rec.id) + '?currentDocument.exists=false', { fields: fields });
+  } catch (e) {
+    if (!A) return; A.busy = false;
+    if (e.code === 'relogin') { closeAdd(); toLogin(ERR.relogin); return; }
+    var g = $('a-go'); if (g) g.disabled = false;
+    setAMsg(e.status === 409 || e.status === 412 ? ERR.exists : (ERR[e.code] || ERR.api_error), 'bad'); return;
+  }
+  var ent = { id: rec.id, u: now, rec: rec };
+  D.cache[rec.id] = ent; await idbOpen(); await idbWrite([ent], []); rebuild(); renderAll();
+  setStatus(D.discs.length + ' dischi · aggiunto ora');
+  if (!A) return;
+  A.step = 'done';
+  $('addp').innerHTML = aHead('Fatto') + '<div class="dh"><div class="acov">' + (rec.cover ? '<img alt="" src="' + esc(rec.cover) + '">' : 'Nessuna copertina') + '</div><div><div class="by">' + esc(rec.artist) + '</div><h2>' + esc(rec.title) + '</h2></div></div>' +
+    '<p class="hint" id="adone">Aggiunto al catalogo. Sul PC arriva alla prossima sincronizzazione' + (rec.cover ? '' : '; la copertina puoi aggiungerla da lì') + '. L\'Overview la generi dal PC.</p>' +
+    '<div class="row"><button class="btn primary" type="button" data-a="again">Scansiona un altro</button><button class="btn" type="button" data-a="close">Chiudi</button></div>';
+}
+
+$('addbtn').addEventListener('click', openAdd);
+$('add').addEventListener('click', function (ev) {
+  var t = ev.target;
+  if (t === $('add')) return closeAdd();
+  var b = t.closest('[data-a]'); if (!b || !A) return;
+  var a = b.dataset.a;
+  if (a === 'close') closeAdd();
+  else if (a === 'back') goStart('', '');
+  else if (a === 'again') { A.lastCode = ''; goStart('', ''); }
+  else if (a === 'pick') pickRel(Number(b.dataset.i));
+  else if (a === 'photo') $('a-file').click();
+  else if (a === 'sup') {
+    var s = b.dataset.s, i = A.media.indexOf(s);
+    if (i > -1) { if (A.media.length > 1) A.media.splice(i, 1); } else A.media.push(s);
+    document.querySelectorAll('#a-sup .chip').forEach(function (c) { c.classList.toggle('on', A.media.indexOf(c.dataset.s) > -1); });
+  }
+});
+$('add').addEventListener('submit', function (ev) {
+  ev.preventDefault();
+  if (!A) return;
+  if (ev.target.id === 'aform-code') {
+    var c = ($('a-code').value || '').replace(/\D/g, '');
+    if (c.length < 8) return setAMsg('Il codice a barre ha almeno 8 cifre.', 'bad');
+    runSearch('code', c);
+  } else if (ev.target.id === 'aform-name') {
+    var ar = $('a-art').value.trim(), ti = $('a-tit').value.trim();
+    if (!ar && !ti) return setAMsg('Scrivi almeno l\'artista o il titolo.', 'bad');
+    runSearch('name', ar, ti);
+  } else if (ev.target.id === 'aform-save') saveNew();
+});
+$('a-file').addEventListener('change', function () {
+  var f = this.files && this.files[0]; this.value = '';
+  if (!f || !A || A.step !== 'confirm') return;
+  if (f.size > 12 * 1024 * 1024) { setAMsg('Immagine troppo grande (massimo 12 MB).', 'bad'); return; }
+  var url = URL.createObjectURL(f), mine = A.sel; A.coverState = 'load'; paintCover();
+  imgToCover(url, false).then(function (c) {
+    URL.revokeObjectURL(url);
+    if (A && A.sel === mine) { if (c) A.cover = c; A.coverState = A.cover ? 'ok' : 'none'; paintCover(); }
+  });
+});
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !$('add').hidden) closeAdd(); });
 
 // ---------- installazione come app (Chrome per Android) ----------
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
