@@ -177,6 +177,7 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .acov img{width:100%;height:100%;object-fit:cover;display:block}
 .wform select{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px}
 .wform input{margin-bottom:0}
+.wb{flex:none;height:34px;padding:0 10px;border:1px solid var(--line);border-radius:8px;background:transparent;color:var(--accent);font-size:13px;font-weight:600}
 .afields{display:flex;flex-direction:column;gap:6px;margin-top:14px}
 @media (max-width:420px){.acov{width:104px;height:104px}}
 .aload{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:30vh;gap:10px;color:var(--soft)}
@@ -583,6 +584,7 @@ function renderProf() {
     h += '<div class="sec"><h2>Wishlist</h2>' + (w.length ? w.map(function (x) {
       var del = V.wDel === x.id;
       return '<div class="h"><div class="ht"><b>' + esc(x.artist || 'Sconosciuto') + '</b><span>' + esc(x.title || '—') + '</span></div>' +
+        '<button type="button" class="wb" data-wid="' + esc(x.id) + '" aria-label="Comprato: aggiungi alla collezione">Comprato</button>' +
         '<button type="button" class="wx' + (del ? ' sure' : '') + '" data-wid="' + esc(x.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi dalla wishlist') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div>';
     }).join('') : '<div class="hint">Nessun disco nella wishlist.</div>') +
       '<div class="row">' + (w.length ? '<button class="btn" id="wcopy">Copia lista</button>' : '') + '<button class="btn' + (V.wAdd ? '' : ' primary') + '" id="wadd" type="button">' + (V.wAdd ? 'Chiudi' : '+ Aggiungi disco') + '</button></div>' +
@@ -629,6 +631,7 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
   if (V.wDel && !t.closest('.wx')) { V.wDel = ''; if (V.tab === 'prof') renderProf(); }
   if (t.closest('#wadd')) { V.wAdd = !V.wAdd; V.wMsg = null; renderProf(); if (V.wAdd) { var fa = $('wa'); if (fa) fa.focus(); } return; }
+  var wbb = t.closest('.wb'); if (wbb) return openBuy(wbb.dataset.wid);
   var wxb = t.closest('.wx');
   if (wxb) {
     var wid = wxb.dataset.wid;
@@ -813,7 +816,7 @@ function imgToCover(src, cors) {
   });
 }
 async function coverOf(rel) {
-  var c = await imgToCover(CAAB + '/release/' + encodeURIComponent(rel.id) + '/front-500', true);
+  var c = rel.id ? await imgToCover(CAAB + '/release/' + encodeURIComponent(rel.id) + '/front-500', true) : '';
   if (!c && rel.rg) c = await imgToCover(CAAB + '/release-group/' + encodeURIComponent(rel.rg) + '/front-500', true);
   return c;
 }
@@ -894,10 +897,24 @@ async function camTick(tok) {
 var A = null;
 function setAMsg(t, c) { if (A) { A.msg = t; A.msgc = c || ''; } var m = $('amsg'); if (m) { m.className = 'msg ' + (c || ''); m.textContent = t || ''; } }
 function aHead(title) { return '<div class="pbar"><span class="pos">' + esc(title) + '</span><div class="pbtns"><button class="ib" type="button" data-a="close" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>'; }
+function newAdd() { return { step: '', msg: '', msgc: '', results: [], sel: null, cover: '', coverState: '', genre: '', media: ['cd'], owner: '', forceOk: false, busy: false, lastCode: '', buy: null }; }
 function openAdd() {
-  A = { step: '', msg: '', msgc: '', results: [], sel: null, cover: '', coverState: '', genre: '', media: ['cd'], owner: '', forceOk: false, busy: false, lastCode: '' };
+  A = newAdd();
   $('add').hidden = false; document.body.style.overflow = 'hidden';
   goStart('', '');
+}
+// «Comprato» dalla wishlist: cerca l'edizione, poi apre la stessa scheda di conferma dello scanner, già compilata
+function manualRel(w) { return { id: '', rg: '', title: w.title || '', artist: w.artist || '', label: '', year: '', media: ['cd'], country: '' }; }
+async function openBuy(wid) {
+  var w = D.wishlist.filter(function (x) { return x.id === wid; })[0]; if (!w) return;
+  A = newAdd(); A.buy = w; A.step = 'busy';
+  $('add').hidden = false; document.body.style.overflow = 'hidden';
+  $('addp').innerHTML = aHead('Comprato') + '<div class="aload"><div class="dots"></div><div>Cerco i dati del disco…</div></div>';
+  var list = [];
+  try { list = await findByName(w.artist, w.title); } catch (e) { list = []; }
+  if (!A || A.buy !== w) return;
+  A.results = list;
+  if (list.length) showResults(list); else startConfirm(manualRel(w));
 }
 function closeAdd() {
   camStop(); A = null; $('add').hidden = true;
@@ -924,19 +941,25 @@ async function runSearch(kind, a, b) {
   catch (e) { if (!A) return; goStart(ERR[e.code] || ERR.mb_error, 'bad'); return; }
   if (!A) return;
   if (!list.length) { goStart(kind === 'code' ? 'Nessun disco con il codice ' + a + ' su MusicBrainz. Prova a cercarlo per nome.' : 'Nessun risultato: controlla artista e titolo.', 'bad'); return; }
-  A.results = list; A.step = 'results';
+  A.results = list; showResults(list);
+}
+function showResults(list) {
+  A.step = 'results';
   var fmt = function (m) { return m === 'vinile' ? 'Vinile' : (m === 'dvd' ? 'DVD' : 'CD'); };
-  $('addp').innerHTML = aHead(list.length === 1 ? 'Ho trovato questo disco' : 'Scegli il disco') +
+  $('addp').innerHTML = aHead(A.buy ? 'Comprato: scegli l\'edizione' : (list.length === 1 ? 'Ho trovato questo disco' : 'Scegli il disco')) +
     '<div class="alist">' + list.map(function (r, i) {
       return '<button type="button" class="res" data-a="pick" data-i="' + i + '"><span class="th"><img alt="" loading="lazy" src="' + esc(CAAB + '/release/' + r.id + '/front-250') + '" onerror="this.style.visibility=\'hidden\'"></span><span class="ht"><b>' + esc(r.title || '—') + '</b><span>' + esc(r.artist || 'Sconosciuto') + '</span><span>' + esc([r.label, r.year, r.media.map(fmt).join(' + '), r.country].filter(Boolean).join(' · ')) + '</span></span></button>';
-    }).join('') + '</div><div class="row"><button class="btn" type="button" data-a="back">Indietro</button></div>';
+    }).join('') + '</div><div class="row">' + (A.buy ? '<button class="btn" type="button" data-a="manual">Nessuna di queste</button><button class="btn" type="button" data-a="close">Annulla</button>' : '<button class="btn" type="button" data-a="back">Indietro</button>') + '</div>';
   $('addp').scrollTop = 0;
 }
-function pickRel(i) {
-  var r = A && A.results[i]; if (!r) return;
-  A.sel = r; A.step = 'confirm'; A.cover = ''; A.coverState = 'load'; A.genre = ''; A.media = r.media.slice(); A.forceOk = false; A.busy = false;
-  A.owner = (V.owner !== 'all' && D.members.some(function (m) { return m.id === V.owner; })) ? V.owner : (D.members[0] ? D.members[0].id : '');
+function pickRel(i) { var r = A && A.results[i]; if (r) startConfirm(r); }
+function startConfirm(r) {
+  var online = !!(r.id || r.rg);
+  A.sel = r; A.step = 'confirm'; A.cover = ''; A.coverState = online ? 'load' : 'none'; A.genre = ''; A.media = r.media.slice(); A.forceOk = false; A.busy = false;
+  if (A.buy) A.owner = (A.buy.member && D.members.some(function (m) { return m.id === A.buy.member; })) ? A.buy.member : (D.members[0] ? D.members[0].id : '');
+  else A.owner = (V.owner !== 'all' && D.members.some(function (m) { return m.id === V.owner; })) ? V.owner : (D.members[0] ? D.members[0].id : '');
   renderConfirm('');
+  if (!online) return;
   var mine = r;
   coverOf(r).then(function (c) { if (A && A.sel === mine) { A.cover = c; A.coverState = c ? 'ok' : 'none'; paintCover(); } });
   genreOf(r.rg).then(function (g) { if (A && A.sel === mine && g) { A.genre = g; var gi = $('a-genre'); if (gi && !gi.value) gi.value = g; } });
@@ -972,6 +995,7 @@ async function saveNew() {
     setAMsg('Hai già questo disco nel catalogo. Premi "Aggiungi comunque" se è un\'altra copia.', 'bad'); return;
   }
   A.busy = true; $('a-go').disabled = true; setAMsg('Salvo…', '');
+  var buy = A.buy;
   var now = Date.now();
   var rec = { id: 'c' + now.toString(36) + Math.floor(Math.random() * 1e4).toString(36), artist: artist, title: title, genre: $('a-genre').value.trim(), media: A.media.length ? A.media : ['cd'], owner: owner || undefined, label: $('a-label').value.trim(), note: '', cover: A.cover || '', rating: 0 };
   if (!rec.owner) delete rec.owner;
@@ -984,14 +1008,21 @@ async function saveNew() {
     var g = $('a-go'); if (g) g.disabled = false;
     setAMsg(e.status === 409 || e.status === 412 ? ERR.exists : (ERR[e.code] || ERR.api_error), 'bad'); return;
   }
+  var wishOk = true;
+  if (buy) {
+    try {
+      var wr = await writeWishlist(function (list) { var i = list.findIndex(function (x) { return x.id === buy.id; }); if (i < 0) return 'skip'; list.splice(i, 1); });
+      D.wishlist = wr.wishlist; D.histU = wr.u;
+    } catch (e) { wishOk = false; }
+  }
   var ent = { id: rec.id, u: now, rec: rec };
   D.cache[rec.id] = ent; await idbOpen(); await idbWrite([ent], []); rebuild(); renderAll();
   setStatus(D.discs.length + ' dischi · aggiunto ora');
   if (!A) return;
   A.step = 'done';
   $('addp').innerHTML = aHead('Fatto') + '<div class="dh"><div class="acov">' + (rec.cover ? '<img alt="" src="' + esc(rec.cover) + '">' : 'Nessuna copertina') + '</div><div><div class="by">' + esc(rec.artist) + '</div><h2>' + esc(rec.title) + '</h2></div></div>' +
-    '<p class="hint" id="adone">Aggiunto al catalogo. Sul PC arriva alla prossima sincronizzazione' + (rec.cover ? '' : '; la copertina puoi aggiungerla da lì') + '. L\'Overview la generi dal PC.</p>' +
-    '<div class="row"><button class="btn primary" type="button" data-a="again">Scansiona un altro</button><button class="btn" type="button" data-a="close">Chiudi</button></div>';
+    '<p class="hint" id="adone">' + (buy ? (wishOk ? 'Aggiunto al catalogo e tolto dalla wishlist.' : 'Aggiunto al catalogo, ma non sono riuscito a toglierlo dalla wishlist: toccane la ✕.') : 'Aggiunto al catalogo.') + ' Sul PC arriva alla prossima sincronizzazione' + (rec.cover ? '' : '; la copertina puoi aggiungerla da lì') + '. L\'Overview la generi dal PC.</p>' +
+    '<div class="row">' + (buy ? '' : '<button class="btn primary" type="button" data-a="again">Scansiona un altro</button>') + '<button class="btn' + (buy ? ' primary' : '') + '" type="button" data-a="close">Chiudi</button></div>';
 }
 
 $('addbtn').addEventListener('click', openAdd);
@@ -1001,7 +1032,8 @@ $('add').addEventListener('click', function (ev) {
   var b = t.closest('[data-a]'); if (!b || !A) return;
   var a = b.dataset.a;
   if (a === 'close') closeAdd();
-  else if (a === 'back') goStart('', '');
+  else if (a === 'manual') startConfirm(manualRel(A.buy));
+  else if (a === 'back') { if (A.buy) { if (A.step === 'confirm' && A.results.length) showResults(A.results); else closeAdd(); } else goStart('', ''); }
   else if (a === 'again') { A.lastCode = ''; goStart('', ''); }
   else if (a === 'pick') pickRel(Number(b.dataset.i));
   else if (a === 'photo') $('a-file').click();
