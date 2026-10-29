@@ -107,6 +107,14 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .dsec{margin-top:18px}
 .dsec h3{font-size:14px;color:var(--soft);text-transform:uppercase;letter-spacing:.8px;margin-bottom:6px;font-family:'Work Sans',system-ui,sans-serif;font-weight:600}
 .dsec p{margin:0 0 10px}
+.tl{list-style:none;margin:0;padding:0;font-size:14px;line-height:1.35}
+.tl li{display:flex;gap:10px;padding:6px 0;border-top:1px solid var(--line)}
+.tl li:first-child{border-top:0}
+.tl .n{width:22px;flex:none;text-align:right;color:var(--soft);font-variant-numeric:tabular-nums}
+.tl .t{flex:1;min-width:0;overflow-wrap:anywhere}
+.tl .d{flex:none;color:var(--soft);font-variant-numeric:tabular-nums}
+.tdisc{margin:12px 0 2px;font-size:12.5px;font-weight:600;color:var(--soft)}
+.ttot{margin-top:8px;font-size:12.5px;color:var(--soft)}
 .kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
 .kv span:first-child{color:var(--soft)}
 
@@ -532,9 +540,47 @@ function openDisc(id, dir) {
     '<div class="tags">' + mm.map(function (m) { return '<span class="tag">' + m + '</span>'; }).join('') + (r.genre ? '<span class="tag">' + esc(r.genre) + '</span>' : '') + '</div></div></div>' +
     '<div class="dsec">' + kv('Etichetta', esc(r.label)) + kv('Nella collezione di', own ? esc(own.name) : '') + kv('Nota', esc(r.note)) + '</div>' +
     (ov ? '<div class="dsec"><h3>Overview</h3>' + ov + '</div>' : '') +
+    '<div class="dsec" id="dtl"></div>' +
     '<div class="dsec"><a href="' + wiki + '" target="_blank" rel="noopener noreferrer">Cerca su Google</a></div></div>';
   $('panel').scrollTop = 0;
   $('sheet').hidden = false; document.body.style.overflow = 'hidden';
+  paintTracks(r);
+}
+// ---- tracklist del disco: quella salvata nel cloud; se manca la cerco su MusicBrainz e la salvo per il PC ----
+var TLBUSY = {};
+function fmtDur(s) { s = Math.max(0, Math.round(s)); return Math.floor(s / 60) + ':' + ('0' + (s % 60)).slice(-2); }
+function tracksHtml(tracks) {
+  var out = '', cur = null, n = 0, total = 0, open = false;
+  tracks.forEach(function (t) {
+    var d = t.disc || 0;
+    if (!open || d !== cur) { if (open) out += '</ol>'; if (d) out += '<div class="tdisc">Disco ' + d + '</div>'; out += '<ol class="tl">'; open = true; cur = d; n = 0; }
+    n++; total += t.sec || 0;
+    out += '<li><span class="n">' + n + '</span><span class="t">' + esc(t.title) + '</span><span class="d">' + (t.sec ? fmtDur(t.sec) : '') + '</span></li>';
+  });
+  if (open) out += '</ol>';
+  return '<h3>Tracklist</h3>' + out + (total ? '<div class="ttot">' + tracks.length + (tracks.length === 1 ? ' brano' : ' brani') + ' · ' + fmtDur(total) + '</div>' : '');
+}
+function paintTracks(r) {
+  var box = $('dtl'); if (!box) return;
+  if (Array.isArray(r.tracks) && r.tracks.length) { box.innerHTML = tracksHtml(r.tracks); return; }
+  if (TLBUSY[r.id]) { box.innerHTML = '<h3>Tracklist</h3><p class="hint">Cerco la tracklist…</p>'; return; }
+  TLBUSY[r.id] = true; box.innerHTML = '<h3>Tracklist</h3><p class="hint">Cerco la tracklist…</p>';
+  lookupTracks(r.artist, r.title, r.mbid).then(function (res) {
+    TLBUSY[r.id] = false;
+    if (res) { saveTracks(r, res.tracks, res.mbid).catch(function () {}); }
+    var b = V.cur === r.id ? $('dtl') : null; if (!b) return;
+    if (res) b.innerHTML = tracksHtml(res.tracks);
+    else { b.innerHTML = '<h3>Tracklist</h3><p class="hint">Non ho trovato la tracklist di questo disco. <button class="link" id="tlretry" type="button">Riprova</button></p>'; $('tlretry').addEventListener('click', function () { paintTracks(r); }); }
+  });
+}
+async function saveTracks(r, tracks, mbid) {
+  r.tracks = tracks; if (mbid) r.mbid = mbid;
+  var now = Date.now(), h = await sha1hex(stable(r));
+  var f = { tracks: toFs(tracks), u: { integerValue: String(now) }, h: { stringValue: h } };
+  if (mbid) f.mbid = { stringValue: mbid };
+  var mask = Object.keys(f).map(function (k) { return 'updateMask.fieldPaths=' + k; }).join('&');
+  await fs('PATCH', '/discs/' + encodeURIComponent(r.id) + '?' + mask + '&currentDocument.exists=true', { fields: f });
+  var ent = { id: r.id, u: now, rec: r }; D.cache[r.id] = ent; await idbOpen(); await idbWrite([ent], []);
 }
 function navDisc(d) {
   var ids = V.ids || [], i = ids.indexOf(V.cur), n = i + d;
@@ -789,6 +835,36 @@ async function findByName(artist, title) {
   var j = await mbGet('/release/?query=' + encodeURIComponent(parts.join(' AND ')) + '&fmt=json&limit=25');
   return dedupRel((j.releases || []).map(normRel));
 }
+function relTracks(rel) {
+  var media = rel.media || [], multi = media.length > 1, out = [];
+  media.forEach(function (m, mi) {
+    (m.tracks || []).forEach(function (t) {
+      var title = String(t.title || (t.recording && t.recording.title) || '').trim(); if (!title) return;
+      var len = Number(t.length || (t.recording && t.recording.length)) || 0, o = { title: title.slice(0, 200), sec: len ? Math.round(len / 1000) : 0 };
+      if (multi) o.disc = mi + 1;
+      out.push(o);
+    });
+  });
+  return out.slice(0, 200);
+}
+async function tracksOfRelease(id) {
+  try { var j = await mbGet('/release/' + encodeURIComponent(id) + '?inc=recordings&fmt=json'); var t = relTracks(j); return t.length ? { tracks: t, mbid: j.id || id } : null; } catch (e) { return null; }
+}
+// per artista+titolo accetta solo un titolo identico (niente album sbagliato)
+async function lookupTracks(artist, title, mbid) {
+  try {
+    if (/^[0-9a-f-]{36}$/i.test(String(mbid || ''))) { var r0 = await tracksOfRelease(mbid); if (r0) return r0; }
+    if (!title) return null;
+    var lq = function (x) { return '"' + String(x).replace(/["\\]/g, ' ').trim() + '"'; }, parts = [];
+    if (artist) parts.push('artist:' + lq(artist));
+    parts.push('release:' + lq(title));
+    var j = await mbGet('/release/?query=' + encodeURIComponent(parts.join(' AND ')) + '&fmt=json&limit=20');
+    var nt = normW(title), na = normW(artist);
+    var same = (j.releases || []).filter(function (x) { var a = normW(acName(x['artist-credit'])); return normW(x.title) === nt && (!na || a.indexOf(na) > -1 || na.indexOf(a) > -1); });
+    var cd = same.filter(function (x) { return (x.media || []).some(function (m) { return /cd/i.test(m.format || ''); }); })[0] || same[0];
+    return cd ? await tracksOfRelease(cd.id) : null;
+  } catch (e) { return null; }
+}
 async function genreOf(rg) {
   if (!rg) return '';
   try {
@@ -955,12 +1031,13 @@ function showResults(list) {
 function pickRel(i) { var r = A && A.results[i]; if (r) startConfirm(r); }
 function startConfirm(r) {
   var online = !!(r.id || r.rg);
-  A.sel = r; A.step = 'confirm'; A.cover = ''; A.coverState = online ? 'load' : 'none'; A.genre = ''; A.media = r.media.slice(); A.forceOk = false; A.busy = false;
+  A.sel = r; A.step = 'confirm'; A.cover = ''; A.coverState = online ? 'load' : 'none'; A.genre = ''; A.tracks = null; A.tracksP = null; A.media = r.media.slice(); A.forceOk = false; A.busy = false;
   if (A.buy) A.owner = (A.buy.member && D.members.some(function (m) { return m.id === A.buy.member; })) ? A.buy.member : (D.members[0] ? D.members[0].id : '');
   else A.owner = (V.owner !== 'all' && D.members.some(function (m) { return m.id === V.owner; })) ? V.owner : (D.members[0] ? D.members[0].id : '');
   renderConfirm('');
   if (!online) return;
   var mine = r;
+  A.tracksP = r.id ? tracksOfRelease(r.id).then(function (t) { if (A && A.sel === mine) A.tracks = t; return t; }) : null;
   coverOf(r).then(function (c) { if (A && A.sel === mine) { A.cover = c; A.coverState = c ? 'ok' : 'none'; paintCover(); } });
   genreOf(r.rg).then(function (g) { if (A && A.sel === mine && g) { A.genre = g; var gi = $('a-genre'); if (gi && !gi.value) gi.value = g; } });
 }
@@ -996,9 +1073,11 @@ async function saveNew() {
   }
   A.busy = true; $('a-go').disabled = true; setAMsg('Salvo…', '');
   var buy = A.buy;
+  if (A.tracksP) { try { await A.tracksP; } catch (e) {} }
   var now = Date.now();
   var rec = { id: 'c' + now.toString(36) + Math.floor(Math.random() * 1e4).toString(36), artist: artist, title: title, genre: $('a-genre').value.trim(), media: A.media.length ? A.media : ['cd'], owner: owner || undefined, label: $('a-label').value.trim(), note: '', cover: A.cover || '', rating: 0 };
   if (!rec.owner) delete rec.owner;
+  if (A && A.tracks && A.tracks.tracks.length) { rec.tracks = A.tracks.tracks; rec.mbid = A.tracks.mbid; }
   try {
     var fields = toFields(rec); fields.u = { integerValue: String(now) }; fields.h = { stringValue: await sha1hex(stable(rec)) };
     await fs('PATCH', '/discs/' + encodeURIComponent(rec.id) + '?currentDocument.exists=false', { fields: fields });
