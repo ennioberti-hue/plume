@@ -157,6 +157,36 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .h time{color:var(--soft);font-size:12.5px;white-space:nowrap}
 .hint{color:var(--soft);font-size:14px}
 .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+.loc{display:flex;align-items:center;gap:5px;color:var(--soft);font-size:14px;margin-top:2px}
+.loc svg{width:15px;height:15px;color:var(--accent);flex:none}
+.loc b{color:var(--ink);font-weight:600}
+.ev{display:flex;align-items:flex-start;gap:12px;padding:12px 0;border-top:1px solid var(--line)}
+.sec h2 + .ev{border-top:0;padding-top:4px}
+.ev.past{opacity:.55}
+.evd{flex:none;width:50px;height:54px;border-radius:12px;border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;line-height:1.05}
+.evd b{font-size:20px;font-weight:600}
+.evd span{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
+.evd .nd{color:var(--soft);text-transform:none;letter-spacing:0;font-weight:500}
+.ev.going .evd{background:color-mix(in srgb,var(--accent) 16%,transparent);border-color:color-mix(in srgb,var(--accent) 45%,transparent)}
+.evt{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.evt b{font-weight:600;font-size:15.5px;line-height:1.25}
+.evt span{color:var(--soft);font-size:13px}
+.evt .evnote{color:var(--ink);opacity:.85;white-space:pre-line;margin-top:2px}
+.evmap{display:inline-flex;align-items:center;gap:4px;color:var(--ink);text-decoration:none;font-size:13.5px;align-self:flex-start}
+.evmap svg{width:14px;height:14px;color:var(--accent);flex:none}
+.evchk{display:flex;flex-wrap:wrap;gap:6px 16px;margin-top:6px}
+.chk{display:inline-flex;align-items:center;gap:7px;font-size:14px;color:var(--soft);min-height:32px}
+.chk input{appearance:none;-webkit-appearance:none;width:20px;height:20px;margin:0;border-radius:5px;border:2px solid var(--line);display:grid;place-items:center;flex:none;background:transparent}
+.chk input:checked{background:var(--accent);border-color:var(--accent)}
+.chk input:checked::after{content:"";width:9px;height:5px;border-left:2px solid var(--accent-ink);border-bottom:2px solid var(--accent-ink);transform:translateY(-1px) rotate(-45deg)}
+.chk input:checked + span{color:var(--ink)}
+.chk.go input:checked + span{font-weight:600}
+.wform textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px;resize:vertical}
+.wform input[type=date]{min-height:46px}
+.wform .alab{margin-bottom:-4px}
+.wform .chk input{width:20px;height:20px;padding:0;border:2px solid var(--line);border-radius:5px;margin:0;font-size:inherit}
+.wform .chk input:checked{border-color:var(--accent)}
+.wform .evchk{margin-top:2px}
 .wx{flex:none;min-width:36px;height:34px;padding:0 8px;border:0;border-radius:8px;background:transparent;color:var(--soft);font-size:15px}
 .wx.sure{background:var(--bad);color:var(--accent-ink);font-size:13px;font-weight:600}
 .wform{display:flex;flex-direction:column;gap:8px;margin-top:12px}
@@ -316,7 +346,7 @@ async function http(method, url, body, headers) {
   }
   return j;
 }
-var ERR = { bad_credentials: 'Email o password non corretti.', too_many: 'Troppi tentativi: riprova tra qualche minuto.', offline: 'Nessuna connessione a Internet.', permission: 'Accesso negato dalle regole del database.', quota: 'Limite giornaliero del piano gratuito raggiunto: riprova domani.', relogin: 'Accesso scaduto: accedi di nuovo.', api_error: 'Errore del servizio, riprova.', conflict: 'La wishlist è stata modificata in contemporanea: riprova.', no_profile: 'Il profilo non è ancora nel cloud: sincronizza prima dal PC.', bad_profile: 'Non riesco a leggere il profilo salvato nel cloud.' };
+var ERR = { bad_credentials: 'Email o password non corretti.', too_many: 'Troppi tentativi: riprova tra qualche minuto.', offline: 'Nessuna connessione a Internet.', permission: 'Accesso negato dalle regole del database.', quota: 'Limite giornaliero del piano gratuito raggiunto: riprova domani.', relogin: 'Accesso scaduto: accedi di nuovo.', api_error: 'Errore del servizio, riprova.', conflict: 'Il profilo è stato modificato in contemporanea: riprova.', no_profile: 'Il profilo non è ancora nel cloud: sincronizza prima dal PC.', bad_profile: 'Non riesco a leggere il profilo salvato nel cloud.' };
 async function signIn(email, pw, remember) {
   var j = await http('POST', AUTH + '/v1/accounts:signInWithPassword?key=' + encodeURIComponent(CFG.apiKey), JSON.stringify({ email: email, password: pw, returnSecureToken: true }), { 'Content-Type': 'application/json' });
   idTok = j.idToken; idExp = Date.now() + (Number(j.expiresIn) || 3600) * 1000; session.email = email;
@@ -359,14 +389,18 @@ async function batchGet(coll, ids, onProgress) {
 
 // ---------- scrittura della wishlist (legge il profilo, modifica solo la wishlist, riscrive con controllo di concorrenza) ----------
 async function writeWishlist(mutate) {
+  var r = await writeProfile(function (p) { if (!Array.isArray(p.wishlist)) p.wishlist = []; return mutate(p.wishlist, p); });
+  return { skipped: r.skipped, wishlist: r.p.wishlist || [], u: r.u };
+}
+// legge il profilo dal cloud, lo modifica e lo riscrive con controllo di concorrenza (wishlist, eventi...)
+async function writeProfile(mutate) {
   for (var attempt = 0; attempt < 3; attempt++) {
     var j = await fs('GET', '/meta/profile').catch(function (e) { if (e.status === 404) return null; throw e; });
     if (!j || !j.fields) throw CErr('no_profile', 404);
     var pf = fromFields(j.fields), p = {};
     try { p = JSON.parse(pf.d || '{}'); } catch (e) { throw CErr('bad_profile', 0); }
     if (!p || typeof p !== 'object') throw CErr('bad_profile', 0);
-    if (!Array.isArray(p.wishlist)) p.wishlist = [];
-    if (mutate(p.wishlist, p) === 'skip') return { skipped: true, wishlist: p.wishlist, u: Number(pf.u) || 0 };
+    if (mutate(p) === 'skip') return { skipped: true, p: p, u: Number(pf.u) || 0 };
     var now = Math.max(Date.now(), (Number(pf.u) || 0) + 1);
     try {
       await fs('PATCH', '/meta/profile?updateMask.fieldPaths=u&updateMask.fieldPaths=d&currentDocument.updateTime=' + encodeURIComponent(j.updateTime || ''),
@@ -375,7 +409,7 @@ async function writeWishlist(mutate) {
       if (e.status === 409 || e.status === 412 || (e.status === 400 && /FAILED_PRECONDITION|ABORTED/.test((e.fsStatus || '') + ' ' + e.message))) continue;
       throw e;
     }
-    return { wishlist: p.wishlist, u: now };
+    return { p: p, u: now };
   }
   throw CErr('conflict', 409);
 }
@@ -399,8 +433,8 @@ function idbWrite(put, del) { return new Promise(function (res) { if (!idb) retu
 function idbClear() { return new Promise(function (res) { if (!idb) return res(); try { var tx = idb.transaction('discs', 'readwrite'); tx.objectStore('discs').clear(); tx.oncomplete = tx.onerror = function () { res(); }; } catch (e) { res(); } }); }
 
 // ---------- dati ----------
-var D = { discs: [], cache: {}, members: [], wishlist: [], history: null, histU: 0, loadedAt: 0 };
-var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false };
+var D = { discs: [], cache: {}, members: [], wishlist: [], events: [], history: null, histU: 0, loadedAt: 0 };
+var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false, eAdd: false, eDel: '', eMsg: null, eBusy: false };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
 // una voce senza membro (o con un membro che non esiste piu) appartiene al profilo principale, come nell'app
@@ -408,6 +442,13 @@ function wishOf(id) {
   var main = D.members.length ? D.members[0].id : '';
   return D.wishlist.filter(function (w) { return (w.member && D.members.some(function (m) { return m.id === w.member; }) ? w.member : main) === id; }).sort(function (a, b) { return (b.at || 0) - (a.at || 0); });
 }
+// eventi e concerti del membro (come nell'app): per data, quelli senza data in fondo
+function eventsOf(id) {
+  var main = D.members.length ? D.members[0].id : '';
+  return D.events.filter(function (e) { return (e.member && D.members.some(function (m) { return m.id === e.member; }) ? e.member : main) === id; })
+    .sort(function (a, b) { var x = a.date || '9999', y = b.date || '9999'; return x < y ? -1 : x > y ? 1 : (b.at || 0) - (a.at || 0); });
+}
+var PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
 function mediaOf(r) { return Array.isArray(r.media) ? r.media : (r.media ? [r.media] : ['cd']); }
 function setStatus(t) { $('status').textContent = t || ''; }
 
@@ -440,6 +481,7 @@ async function loadAll(manual) {
       var pf = fromFields(pj.fields), p = {};
       try { p = JSON.parse(pf.d || '{}'); } catch (e) {}
       D.members = Array.isArray(p.members) ? p.members : []; D.wishlist = Array.isArray(p.wishlist) ? p.wishlist : [];
+      D.events = Array.isArray(p.events) ? p.events.filter(function (e) { return e && e.id && e.name; }) : [];
       if (D.histU !== pf.u) { D.history = null; D.histU = pf.u; D.nh = pf.nh || 0; }
     }
     D.loadedAt = Date.now();
@@ -469,7 +511,7 @@ function toLogin(msg) {
   $('em').value = lsGet('plume.email'); $('pw').value = ''; $('lgo').disabled = false;
 }
 function show(tab) {
-  V.tab = tab; V.wMsg = null; V.wDel = '';
+  V.tab = tab; V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = '';
   var curEl = $('cur'); if (curEl) curEl.textContent = { coll: 'Collezione', prof: 'Profilo' }[tab] || '';
   document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
   var booting = !$('boot').hidden;
@@ -616,7 +658,8 @@ function renderProf() {
   memberStrip($('p-mem'), sel);
   var m = D.members.filter(function (x) { return x.id === sel; })[0], s = summary(sel), h = '';
   var num = function (n, l) { return '<div class="num"><b>' + n + '</b><span>' + l + '</span></div>'; };
-  h += '<div class="ph">' + (m ? '<span class="mav">' + avatar(m) + '</span><div><h2>' + esc(m.name) + '</h2><div class="hint">Collezione di ' + esc(m.name) + '</div></div>' : '<span class="mav">ALL</span><div><h2>Tutti i profili</h2><div class="hint">Statistiche generali</div></div>') + '</div>';
+  var loc = m ? [String(m.region || '').trim(), String(m.country || '').trim()].filter(Boolean).join(', ') : '';
+  h += '<div class="ph">' + (m ? '<span class="mav">' + avatar(m) + '</span><div><h2>' + esc(m.name) + '</h2>' + (loc ? '<div class="loc">' + PIN + '<span>Vive in <b>' + esc(loc) + '</b></span></div>' : '<div class="hint">Collezione di ' + esc(m.name) + '</div>') + '</div>' : '<span class="mav">ALL</span><div><h2>Tutti i profili</h2><div class="hint">Statistiche generali</div></div>') + '</div>';
   h += '<div class="nums">' + num(s.total, 'dischi') + num(s.artists, 'artisti') + num(s.cd, 'CD') + num(s.vn, 'vinili') + (s.dv ? num(s.dv, 'DVD') : '') + (s.ms ? num(s.ms + ' ★', 'capolavori') : '') + (s.avg ? num(s.avg.toFixed(1).replace('.', ','), 'voto medio') : '') + '</div>';
   if (s.top && s.top.n > 1) h += '<div class="sec"><h2>Artista più presente</h2><div>' + esc(s.top.name) + ' · ' + s.top.n + ' dischi</div></div>';
   if (sel === 'all' && D.members.length > 1) {
@@ -636,6 +679,28 @@ function renderProf() {
       '<div class="row">' + (w.length ? '<button class="btn" id="wcopy">Copia lista</button>' : '') + '<button class="btn' + (V.wAdd ? '' : ' primary') + '" id="wadd" type="button">' + (V.wAdd ? 'Chiudi' : '+ Aggiungi disco') + '</button></div>' +
       (V.wAdd ? '<form id="wform" class="wform" autocomplete="off"><input id="wa" type="text" maxlength="120" placeholder="Artista" aria-label="Artista" autocapitalize="words" spellcheck="false"><input id="wt" type="text" maxlength="160" placeholder="Titolo del disco" aria-label="Titolo del disco" autocapitalize="words" spellcheck="false"><div class="row"><button class="btn primary" id="wgo" type="submit"' + (V.wBusy ? ' disabled' : '') + '>Aggiungi alla wishlist</button></div></form>' : '') +
       '<div class="msg ' + (V.wMsg ? V.wMsg.c : 'ok') + '" id="wmsg">' + (V.wMsg ? esc(V.wMsg.t) : '') + '</div></div>';
+    var evs = eventsOf(sel), today = new Date().toISOString().slice(0, 10);
+    h += '<div class="sec"><h2>Eventi e concerti</h2>' + (evs.length ? evs.map(function (e) {
+      var d = e.date ? new Date(e.date + 'T12:00:00') : null, del = V.eDel === e.id, past = e.date && e.date < today;
+      var full = d ? d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+      return '<div class="ev' + (past ? ' past' : '') + (e.going ? ' going' : '') + '">' +
+        '<div class="evd">' + (d ? '<b>' + d.getDate() + '</b><span>' + esc(d.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '')) + '</span>' : '<span class="nd">data?</span>') + '</div>' +
+        '<div class="evt"><b>' + esc(e.name) + '</b>' + (full ? '<span>' + esc(full) + '</span>' : '') +
+          (e.place ? '<a class="evmap" href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.place) + '" target="_blank" rel="noopener">' + PIN + esc(e.place) + '</a>' : '') +
+          (e.note ? '<span class="evnote">' + esc(e.note) + '</span>' : '') +
+          '<div class="evchk"><label class="chk"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="interested"' + (e.interested ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Mi interessa</span></label>' +
+          '<label class="chk go"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="going"' + (e.going ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Parteciperò</span></label></div></div>' +
+        '<button type="button" class="wx ex' + (del ? ' sure' : '') + '" data-eid="' + esc(e.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi evento') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div>';
+    }).join('') : '<div class="hint">Nessun evento. Aggiungi i concerti e i festival a cui ti piacerebbe andare.</div>') +
+      '<div class="row"><button class="btn' + (V.eAdd ? '' : ' primary') + '" id="eadd" type="button">' + (V.eAdd ? 'Chiudi' : '+ Aggiungi evento') + '</button></div>' +
+      (V.eAdd ? '<form id="eform" class="wform" autocomplete="off">' +
+        '<input id="en" type="text" maxlength="120" placeholder="Nome evento (es. Concerto Korn)" aria-label="Nome evento" autocapitalize="sentences">' +
+        '<label class="alab" for="ed">Data (facoltativa)</label><input id="ed" type="date" aria-label="Data">' +
+        '<input id="ep" type="text" maxlength="140" placeholder="Luogo (es. Arena di Verona)" aria-label="Luogo" autocapitalize="words">' +
+        '<textarea id="eno" maxlength="600" rows="3" placeholder="Note (es. biglietto 65 €, apertura cancelli 18:30)" aria-label="Note"></textarea>' +
+        '<div class="evchk"><label class="chk"><input type="checkbox" id="ei" checked><span>Mi interessa</span></label><label class="chk go"><input type="checkbox" id="eg"><span>Parteciperò (ho il biglietto)</span></label></div>' +
+        '<div class="row"><button class="btn primary" id="ego" type="submit"' + (V.eBusy ? ' disabled' : '') + '>Aggiungi evento</button></div></form>' : '') +
+      '<div class="msg ' + (V.eMsg ? V.eMsg.c : 'ok') + '" id="emsg">' + (V.eMsg ? esc(V.eMsg.t) : '') + '</div></div>';
   }
   $('pf').innerHTML = h;
   if (sel === 'all') histView();
@@ -666,7 +731,7 @@ $('lform').addEventListener('submit', async function (ev) {
 document.addEventListener('click', function (ev) {
   var t = ev.target;
   var tab = t.closest('.tab'); if (tab) return show(tab.dataset.tab);
-  var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
+  var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = ''; V.eAdd = false; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
   var md = t.closest('[data-md]'); if (md) { V.media = md.dataset.md; return renderColl(); }
   var card = t.closest('.card'); if (card) return openDisc(card.dataset.id);
   if (t.closest('#pv')) return navDisc(-1);
@@ -675,6 +740,15 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#refresh')) return loadAll(true);
   if (t.closest('#logout')) { lsSet('plume.rt', ''); idTok = ''; idbOpen().then(idbClear); D.cache = {}; D.discs = []; D.members = []; D.history = null; toLogin(''); return; }
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
+  if (V.eDel && !t.closest('.ex')) { V.eDel = ''; if (V.tab === 'prof') renderProf(); }
+  if (t.closest('#eadd')) { V.eAdd = !V.eAdd; V.eMsg = null; renderProf(); if (V.eAdd) { var fe = $('en'); if (fe) fe.focus(); } return; }
+  var exb = t.closest('.ex');
+  if (exb) {
+    var eid = exb.dataset.eid;
+    if (V.eDel !== eid) { V.eDel = eid; V.eMsg = null; return renderProf(); }
+    V.eDel = ''; saveEvents(function (list) { var i = list.findIndex(function (x) { return x.id === eid; }); if (i < 0) return 'skip'; list.splice(i, 1); }, 'Evento rimosso.');
+    return;
+  }
   if (V.wDel && !t.closest('.wx')) { V.wDel = ''; if (V.tab === 'prof') renderProf(); }
   if (t.closest('#wadd')) { V.wAdd = !V.wAdd; V.wMsg = null; renderProf(); if (V.wAdd) { var fa = $('wa'); if (fa) fa.focus(); } return; }
   var wbb = t.closest('.wb'); if (wbb) return openBuy(wbb.dataset.wid);
@@ -699,6 +773,31 @@ document.addEventListener('click', function (ev) {
     var done = function (ok) { var el = $('wmsg'); if (el) { el.className = 'msg ' + (ok ? 'ok' : 'bad'); el.textContent = ok ? 'Lista copiata.' : 'Copia non riuscita: seleziona il testo a mano.'; } };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(function () { done(true); }, function () { done(false); }); else done(false);
   }
+});
+// eventi: scrive nel profilo del cloud; sul PC arrivano alla prossima sincronizzazione
+function saveEvents(mutate, okMsg, after) {
+  V.eBusy = true; var m = $('emsg'); if (m) { m.className = 'msg'; m.textContent = 'Salvo…'; }
+  return writeProfile(function (p) { if (!Array.isArray(p.events)) p.events = []; return mutate(p.events, p); }).then(function (r) {
+    D.events = (r.p.events || []).filter(function (e) { return e && e.id && e.name; }); if (!r.skipped) D.histU = r.u;
+    V.eMsg = { c: 'ok', t: okMsg }; V.eBusy = false; if (after) after(); if (V.tab === 'prof') renderProf();
+  }, function (e) {
+    V.eBusy = false;
+    if (e.code === 'relogin') { toLogin(ERR.relogin); return; }
+    V.eMsg = { c: 'bad', t: ERR[e.code] || ERR.api_error }; if (V.tab === 'prof') renderProf();
+  });
+}
+document.addEventListener('change', function (ev) {
+  var c = ev.target; if (!c.matches || !c.matches('input[data-ek]')) return;
+  var eid = c.dataset.eid, key = c.dataset.ek, val = c.checked;
+  saveEvents(function (list) { var e = list.filter(function (x) { return x.id === eid; })[0]; if (!e) return 'skip'; e[key] = val; }, key === 'going' ? (val ? 'Segnato: parteciperai.' : 'Tolto «Parteciperò».') : (val ? 'Segnato: ti interessa.' : 'Tolto «Mi interessa».'));
+});
+document.addEventListener('submit', function (ev) {
+  if (ev.target.id !== 'eform') return;
+  ev.preventDefault(); if (V.eBusy) return;
+  var name = $('en').value.trim();
+  if (!name) { var m0 = $('emsg'); m0.className = 'msg bad'; m0.textContent = 'Scrivi il nome dell\'evento.'; $('en').focus(); return; }
+  var o = { id: 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), name: name, date: $('ed').value || '', place: $('ep').value.trim(), note: $('eno').value.replace(/\r\n/g, '\n').trim(), interested: $('ei').checked, going: $('eg').checked, member: V.pOwner, at: Date.now() };
+  saveEvents(function (list) { list.push(o); }, 'Aggiunto: ' + name + '. Sul PC arriva alla prossima apertura di Plume.', function () { V.eAdd = false; });
 });
 document.addEventListener('submit', function (ev) {
   if (ev.target.id !== 'wform') return;
