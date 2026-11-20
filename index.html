@@ -190,6 +190,11 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .chk.cal.off{opacity:.5}
 .hint.small{font-size:12.5px;margin-top:-2px}
 .hint.small:empty{display:none}
+.evbtn{display:flex;flex-direction:column;align-items:flex-end;gap:2px;flex:none}
+.ee svg{width:17px;height:17px;display:block}
+.ev.evform{display:block}
+.ev.evform .wform{margin-top:0}
+.evedh{font-weight:700;font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--accent)}
 .evcal{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:13.5px;font-weight:600;color:var(--accent);text-decoration:none;align-self:flex-start;min-height:32px}
 .evcal svg{width:16px;height:16px;flex:none}
 .wform .chk input{width:20px;height:20px;padding:0;border:2px solid var(--line);border-radius:5px;margin:0;font-size:inherit}
@@ -442,7 +447,7 @@ function idbClear() { return new Promise(function (res) { if (!idb) return res()
 
 // ---------- dati ----------
 var D = { discs: [], cache: {}, members: [], wishlist: [], events: [], history: null, histU: 0, loadedAt: 0 };
-var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false, eAdd: false, eDel: '', eMsg: null, eBusy: false };
+var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false, eAdd: false, eEdit: '', eDel: '', eMsg: null, eBusy: false };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
 // una voce senza membro (o con un membro che non esiste piu) appartiene al profilo principale, come nell'app
@@ -471,6 +476,21 @@ function calUrl(ev) {
   return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(ev.name) + '&dates=' + dates +
     (ev.place ? '&location=' + encodeURIComponent(ev.place) : '') + '&details=' + encodeURIComponent((ev.note ? ev.note + '\n\n' : '') + 'Aggiunto da Plume.');
 }
+// modulo dell'evento: vuoto per aggiungerne uno, compilato per modificarlo
+function evForm(e) {
+  var v = function (k) { return e && e[k] ? esc(e[k]) : ''; };
+  return '<form id="eform" class="wform' + (e ? ' editing' : '') + '" autocomplete="off"' + (e ? ' data-eid="' + esc(e.id) + '"' : '') + '>' +
+    (e ? '<div class="evedh">Modifica evento</div>' : '') +
+    '<input id="en" type="text" maxlength="120" placeholder="Nome evento (es. Concerto Korn)" aria-label="Nome evento" autocapitalize="sentences" value="' + v('name') + '">' +
+    '<div class="dt"><div><label class="alab" for="ed">Data (facoltativa)</label><input id="ed" type="date" aria-label="Data" value="' + v('date') + '"></div>' +
+    '<div><label class="alab" for="eti">Orario (facoltativo)</label><input id="eti" type="time" aria-label="Orario" value="' + v('time') + '"></div></div>' +
+    '<input id="ep" type="text" maxlength="140" placeholder="Luogo (es. Arena di Verona)" aria-label="Luogo" autocapitalize="words" value="' + v('place') + '">' +
+    '<textarea id="eno" maxlength="600" rows="3" placeholder="Note (es. biglietto 65 €, apertura cancelli 18:30)" aria-label="Note">' + v('note') + '</textarea>' +
+    '<div class="evchk"><label class="chk"><input type="checkbox" id="ei"' + (!e || e.interested ? ' checked' : '') + '><span>Mi interessa</span></label><label class="chk go"><input type="checkbox" id="eg"' + (e && e.going ? ' checked' : '') + '><span>Parteciperò (ho il biglietto)</span></label>' +
+    '<label class="chk cal off" id="ecw"><input type="checkbox" id="ec" disabled><span>Aggiungi a Google Calendar</span></label></div><div class="hint small" id="ech">Per aggiungerlo al calendario indica la data.</div>' +
+    '<div class="row">' + (e ? '<button class="btn" id="ecancel" type="button">Annulla</button>' : '') + '<button class="btn primary" id="ego" type="submit"' + (V.eBusy ? ' disabled' : '') + '>' + (e ? 'Salva modifiche' : 'Aggiungi evento') + '</button></div></form>';
+}
+var EDIT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
 var CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13.5v4M10 15.5h4"/></svg>';
 var PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
 function mediaOf(r) { return Array.isArray(r.media) ? r.media : (r.media ? [r.media] : ['cd']); }
@@ -535,7 +555,7 @@ function toLogin(msg) {
   $('em').value = lsGet('plume.email'); $('pw').value = ''; $('lgo').disabled = false;
 }
 function show(tab) {
-  V.tab = tab; V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = '';
+  V.tab = tab; V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = ''; V.eEdit = '';
   var curEl = $('cur'); if (curEl) curEl.textContent = { coll: 'Collezione', prof: 'Profilo' }[tab] || '';
   document.querySelectorAll('.tab').forEach(function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
   var booting = !$('boot').hidden;
@@ -707,6 +727,7 @@ function renderProf() {
     h += '<div class="sec"><h2>Eventi e concerti</h2>' + (evs.length ? evs.map(function (e) {
       var d = e.date ? new Date(e.date + 'T12:00:00') : null, del = V.eDel === e.id, past = e.date && e.date < today;
       var full = d ? d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) + (e.time ? ', ore ' + e.time : '') : '';
+      if (V.eEdit === e.id) return '<div class="ev evform">' + evForm(e) + '</div>';
       return '<div class="ev' + (past ? ' past' : '') + (e.going ? ' going' : '') + '">' +
         '<div class="evd">' + (d ? '<b>' + d.getDate() + '</b><span>' + esc(d.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '')) + '</span>' : '<span class="nd">data?</span>') + '</div>' +
         '<div class="evt"><b>' + esc(e.name) + '</b>' + (full ? '<span>' + esc(full) + '</span>' : '') +
@@ -715,18 +736,11 @@ function renderProf() {
           '<div class="evchk"><label class="chk"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="interested"' + (e.interested ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Mi interessa</span></label>' +
           '<label class="chk go"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="going"' + (e.going ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Parteciperò</span></label></div>' +
           (e.date ? '<a class="evcal" href="' + esc(calUrl(e)) + '" target="_blank" rel="noopener">' + CAL + 'Aggiungi a Google Calendar</a>' : '') + '</div>' +
-        '<button type="button" class="wx ex' + (del ? ' sure' : '') + '" data-eid="' + esc(e.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi evento') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div>';
+        '<div class="evbtn">' + (del ? '' : '<button type="button" class="wx ee" data-eid="' + esc(e.id) + '" aria-label="Modifica evento">' + EDIT + '</button>') +
+        '<button type="button" class="wx ex' + (del ? ' sure' : '') + '" data-eid="' + esc(e.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi evento') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div></div>';
     }).join('') : '<div class="hint">Nessun evento. Aggiungi i concerti e i festival a cui ti piacerebbe andare.</div>') +
-      '<div class="row"><button class="btn' + (V.eAdd ? '' : ' primary') + '" id="eadd" type="button">' + (V.eAdd ? 'Chiudi' : '+ Aggiungi evento') + '</button></div>' +
-      (V.eAdd ? '<form id="eform" class="wform" autocomplete="off">' +
-        '<input id="en" type="text" maxlength="120" placeholder="Nome evento (es. Concerto Korn)" aria-label="Nome evento" autocapitalize="sentences">' +
-        '<div class="dt"><div><label class="alab" for="ed">Data (facoltativa)</label><input id="ed" type="date" aria-label="Data"></div>' +
-        '<div><label class="alab" for="eti">Orario (facoltativo)</label><input id="eti" type="time" aria-label="Orario"></div></div>' +
-        '<input id="ep" type="text" maxlength="140" placeholder="Luogo (es. Arena di Verona)" aria-label="Luogo" autocapitalize="words">' +
-        '<textarea id="eno" maxlength="600" rows="3" placeholder="Note (es. biglietto 65 €, apertura cancelli 18:30)" aria-label="Note"></textarea>' +
-        '<div class="evchk"><label class="chk"><input type="checkbox" id="ei" checked><span>Mi interessa</span></label><label class="chk go"><input type="checkbox" id="eg"><span>Parteciperò (ho il biglietto)</span></label>' +
-        '<label class="chk cal off" id="ecw"><input type="checkbox" id="ec" disabled><span>Aggiungi a Google Calendar</span></label></div><div class="hint small" id="ech">Per aggiungerlo al calendario indica la data.</div>' +
-        '<div class="row"><button class="btn primary" id="ego" type="submit"' + (V.eBusy ? ' disabled' : '') + '>Aggiungi evento</button></div></form>' : '') +
+      (V.eEdit ? '' : '<div class="row"><button class="btn' + (V.eAdd ? '' : ' primary') + '" id="eadd" type="button">' + (V.eAdd ? 'Chiudi' : '+ Aggiungi evento') + '</button></div>') +
+      (V.eAdd && !V.eEdit ? evForm(null) : '') +
       '<div class="msg ' + (V.eMsg ? V.eMsg.c : 'ok') + '" id="emsg">' + (V.eMsg ? esc(V.eMsg.t) : '') + '</div></div>';
   }
   $('pf').innerHTML = h;
@@ -758,7 +772,7 @@ $('lform').addEventListener('submit', async function (ev) {
 document.addEventListener('click', function (ev) {
   var t = ev.target;
   var tab = t.closest('.tab'); if (tab) return show(tab.dataset.tab);
-  var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = ''; V.eAdd = false; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
+  var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = ''; V.eAdd = false; V.eEdit = ''; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
   var md = t.closest('[data-md]'); if (md) { V.media = md.dataset.md; return renderColl(); }
   var card = t.closest('.card'); if (card) return openDisc(card.dataset.id);
   if (t.closest('#pv')) return navDisc(-1);
@@ -768,7 +782,10 @@ document.addEventListener('click', function (ev) {
   if (t.closest('#logout')) { lsSet('plume.rt', ''); idTok = ''; idbOpen().then(idbClear); D.cache = {}; D.discs = []; D.members = []; D.history = null; toLogin(''); return; }
   if (t.closest('#hmore')) { histShown += 30; return histView(); }
   if (V.eDel && !t.closest('.ex')) { V.eDel = ''; if (V.tab === 'prof') renderProf(); }
-  if (t.closest('#eadd')) { V.eAdd = !V.eAdd; V.eMsg = null; renderProf(); if (V.eAdd) { var fe = $('en'); if (fe) fe.focus(); } return; }
+  if (t.closest('#eadd')) { V.eAdd = !V.eAdd; V.eEdit = ''; V.eMsg = null; renderProf(); if (V.eAdd) { var fe = $('en'); if (fe) fe.focus(); calFormState(); } return; }
+  var eeb = t.closest('.ee');
+  if (eeb) { V.eEdit = eeb.dataset.eid; V.eAdd = false; V.eDel = ''; V.eMsg = null; renderProf(); var fm = $('eform'); if (fm) { fm.scrollIntoView({ block: 'start', behavior: 'smooth' }); calFormState(); } return; }
+  if (t.closest('#ecancel')) { V.eEdit = ''; V.eMsg = null; renderProf(); return; }
   var exb = t.closest('.ex');
   if (exb) {
     var eid = exb.dataset.eid;
@@ -830,9 +847,16 @@ document.addEventListener('submit', function (ev) {
   ev.preventDefault(); if (V.eBusy) return;
   var name = $('en').value.trim();
   if (!name) { var m0 = $('emsg'); m0.className = 'msg bad'; m0.textContent = 'Scrivi il nome dell\'evento.'; $('en').focus(); return; }
-  var o = { id: 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), name: name, date: $('ed').value || '', time: $('ed').value ? ($('eti').value || '') : '', place: $('ep').value.trim(), note: $('eno').value.replace(/\r\n/g, '\n').trim(), interested: $('ei').checked, going: $('eg').checked, member: V.pOwner, at: Date.now() };
-  // il calendario si apre subito, nel tocco su «Aggiungi evento» (altrimenti il telefono blocca la finestra)
-  if ($('ec').checked && o.date) { try { window.open(calUrl(o), '_blank'); } catch (e) {} }
+  var fields = { name: name, date: $('ed').value || '', time: $('ed').value ? ($('eti').value || '') : '', place: $('ep').value.trim(), note: $('eno').value.replace(/\r\n/g, '\n').trim(), interested: $('ei').checked, going: $('eg').checked };
+  var editId = ev.target.dataset.eid || '';
+  // il calendario si apre subito, nel tocco sul pulsante (altrimenti il telefono blocca la finestra)
+  if ($('ec').checked && fields.date) { try { window.open(calUrl(fields), '_blank'); } catch (e) {} }
+  if (editId) {
+    saveEvents(function (list) { var x = list.filter(function (y) { return y.id === editId; })[0]; if (!x) return 'skip'; Object.keys(fields).forEach(function (k) { x[k] = fields[k]; }); },
+      'Modificato: ' + name + '. Sul PC arriva alla prossima apertura di Plume.', function () { V.eEdit = ''; });
+    return;
+  }
+  var o = Object.assign({ id: 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), member: V.pOwner, at: Date.now() }, fields);
   saveEvents(function (list) { list.push(o); }, 'Aggiunto: ' + name + '. Sul PC arriva alla prossima apertura di Plume.', function () { V.eAdd = false; });
 });
 document.addEventListener('submit', function (ev) {
