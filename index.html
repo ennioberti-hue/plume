@@ -184,6 +184,14 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .wform textarea{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--ink);font:inherit;font-size:16px;resize:vertical}
 .wform input[type=date]{min-height:46px}
 .wform .alab{margin-bottom:-4px}
+.wform .dt{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.wform .dt > div{display:flex;flex-direction:column;gap:8px;min-width:0}
+.wform input[type=time]{min-height:46px}
+.chk.cal.off{opacity:.5}
+.hint.small{font-size:12.5px;margin-top:-2px}
+.hint.small:empty{display:none}
+.evcal{display:inline-flex;align-items:center;gap:6px;margin-top:6px;font-size:13.5px;font-weight:600;color:var(--accent);text-decoration:none;align-self:flex-start;min-height:32px}
+.evcal svg{width:16px;height:16px;flex:none}
 .wform .chk input{width:20px;height:20px;padding:0;border:2px solid var(--line);border-radius:5px;margin:0;font-size:inherit}
 .wform .chk input:checked{border-color:var(--accent)}
 .wform .evchk{margin-top:2px}
@@ -448,6 +456,22 @@ function eventsOf(id) {
   return D.events.filter(function (e) { return (e.member && D.members.some(function (m) { return m.id === e.member; }) ? e.member : main) === id; })
     .sort(function (a, b) { var x = a.date || '9999', y = b.date || '9999'; return x < y ? -1 : x > y ? 1 : (b.at || 0) - (a.at || 0); });
 }
+// link «crea evento» di Google Calendar (come nell'app): con l'orario dura 3 ore, senza e tutto il giorno
+function calUrl(ev) {
+  if (!ev || !ev.date) return '';
+  var p2 = function (n) { return String(n).padStart(2, '0'); }, dates;
+  if (ev.time && /^\d{2}:\d{2}$/.test(ev.time)) {
+    var st = new Date(ev.date + 'T' + ev.time + ':00'), en = new Date(st.getTime() + 3 * 3600e3);
+    var f = function (d) { return d.getFullYear() + p2(d.getMonth() + 1) + p2(d.getDate()) + 'T' + p2(d.getHours()) + p2(d.getMinutes()) + '00'; };
+    dates = f(st) + '/' + f(en);
+  } else {
+    var nx = new Date(ev.date + 'T12:00:00'); nx.setDate(nx.getDate() + 1);
+    dates = ev.date.replace(/-/g, '') + '/' + nx.getFullYear() + p2(nx.getMonth() + 1) + p2(nx.getDate());
+  }
+  return 'https://calendar.google.com/calendar/render?action=TEMPLATE&text=' + encodeURIComponent(ev.name) + '&dates=' + dates +
+    (ev.place ? '&location=' + encodeURIComponent(ev.place) : '') + '&details=' + encodeURIComponent((ev.note ? ev.note + '\n\n' : '') + 'Aggiunto da Plume.');
+}
+var CAL = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18M12 13.5v4M10 15.5h4"/></svg>';
 var PIN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-7-6.2-7-11.5a7 7 0 0 1 14 0C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/></svg>';
 function mediaOf(r) { return Array.isArray(r.media) ? r.media : (r.media ? [r.media] : ['cd']); }
 function setStatus(t) { $('status').textContent = t || ''; }
@@ -682,23 +706,26 @@ function renderProf() {
     var evs = eventsOf(sel), today = new Date().toISOString().slice(0, 10);
     h += '<div class="sec"><h2>Eventi e concerti</h2>' + (evs.length ? evs.map(function (e) {
       var d = e.date ? new Date(e.date + 'T12:00:00') : null, del = V.eDel === e.id, past = e.date && e.date < today;
-      var full = d ? d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) : '';
+      var full = d ? d.toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }) + (e.time ? ', ore ' + e.time : '') : '';
       return '<div class="ev' + (past ? ' past' : '') + (e.going ? ' going' : '') + '">' +
         '<div class="evd">' + (d ? '<b>' + d.getDate() + '</b><span>' + esc(d.toLocaleDateString('it-IT', { month: 'short' }).replace('.', '')) + '</span>' : '<span class="nd">data?</span>') + '</div>' +
         '<div class="evt"><b>' + esc(e.name) + '</b>' + (full ? '<span>' + esc(full) + '</span>' : '') +
           (e.place ? '<a class="evmap" href="https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(e.place) + '" target="_blank" rel="noopener">' + PIN + esc(e.place) + '</a>' : '') +
           (e.note ? '<span class="evnote">' + esc(e.note) + '</span>' : '') +
           '<div class="evchk"><label class="chk"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="interested"' + (e.interested ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Mi interessa</span></label>' +
-          '<label class="chk go"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="going"' + (e.going ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Parteciperò</span></label></div></div>' +
+          '<label class="chk go"><input type="checkbox" data-eid="' + esc(e.id) + '" data-ek="going"' + (e.going ? ' checked' : '') + (V.eBusy ? ' disabled' : '') + '><span>Parteciperò</span></label></div>' +
+          (e.date ? '<a class="evcal" href="' + esc(calUrl(e)) + '" target="_blank" rel="noopener">' + CAL + 'Aggiungi a Google Calendar</a>' : '') + '</div>' +
         '<button type="button" class="wx ex' + (del ? ' sure' : '') + '" data-eid="' + esc(e.id) + '" aria-label="' + (del ? 'Conferma rimozione' : 'Rimuovi evento') + '">' + (del ? 'Rimuovi?' : '✕') + '</button></div>';
     }).join('') : '<div class="hint">Nessun evento. Aggiungi i concerti e i festival a cui ti piacerebbe andare.</div>') +
       '<div class="row"><button class="btn' + (V.eAdd ? '' : ' primary') + '" id="eadd" type="button">' + (V.eAdd ? 'Chiudi' : '+ Aggiungi evento') + '</button></div>' +
       (V.eAdd ? '<form id="eform" class="wform" autocomplete="off">' +
         '<input id="en" type="text" maxlength="120" placeholder="Nome evento (es. Concerto Korn)" aria-label="Nome evento" autocapitalize="sentences">' +
-        '<label class="alab" for="ed">Data (facoltativa)</label><input id="ed" type="date" aria-label="Data">' +
+        '<div class="dt"><div><label class="alab" for="ed">Data (facoltativa)</label><input id="ed" type="date" aria-label="Data"></div>' +
+        '<div><label class="alab" for="eti">Orario (facoltativo)</label><input id="eti" type="time" aria-label="Orario"></div></div>' +
         '<input id="ep" type="text" maxlength="140" placeholder="Luogo (es. Arena di Verona)" aria-label="Luogo" autocapitalize="words">' +
         '<textarea id="eno" maxlength="600" rows="3" placeholder="Note (es. biglietto 65 €, apertura cancelli 18:30)" aria-label="Note"></textarea>' +
-        '<div class="evchk"><label class="chk"><input type="checkbox" id="ei" checked><span>Mi interessa</span></label><label class="chk go"><input type="checkbox" id="eg"><span>Parteciperò (ho il biglietto)</span></label></div>' +
+        '<div class="evchk"><label class="chk"><input type="checkbox" id="ei" checked><span>Mi interessa</span></label><label class="chk go"><input type="checkbox" id="eg"><span>Parteciperò (ho il biglietto)</span></label>' +
+        '<label class="chk cal off" id="ecw"><input type="checkbox" id="ec" disabled><span>Aggiungi a Google Calendar</span></label></div><div class="hint small" id="ech">Per aggiungerlo al calendario indica la data.</div>' +
         '<div class="row"><button class="btn primary" id="ego" type="submit"' + (V.eBusy ? ' disabled' : '') + '>Aggiungi evento</button></div></form>' : '') +
       '<div class="msg ' + (V.eMsg ? V.eMsg.c : 'ok') + '" id="emsg">' + (V.eMsg ? esc(V.eMsg.t) : '') + '</div></div>';
   }
@@ -786,7 +813,14 @@ function saveEvents(mutate, okMsg, after) {
     V.eMsg = { c: 'bad', t: ERR[e.code] || ERR.api_error }; if (V.tab === 'prof') renderProf();
   });
 }
+function calFormState() {
+  var d = $('ed'), c = $('ec'), w = $('ecw'), h = $('ech'); if (!d || !c) return;
+  var has = !!d.value; c.disabled = !has; if (!has) c.checked = false; w.classList.toggle('off', !has);
+  h.textContent = has ? (c.checked ? 'Salvando, si apre Google Calendar con l\'evento già compilato: tocca «Salva».' + ($('eti').value ? '' : ' Senza orario sarà un evento di tutto il giorno.') : '') : 'Per aggiungerlo al calendario indica la data.';
+}
+document.addEventListener('input', function (ev) { if (ev.target && (ev.target.id === 'ed' || ev.target.id === 'eti')) calFormState(); });
 document.addEventListener('change', function (ev) {
+  if (ev.target && (ev.target.id === 'ed' || ev.target.id === 'eti' || ev.target.id === 'ec')) { calFormState(); return; }
   var c = ev.target; if (!c.matches || !c.matches('input[data-ek]')) return;
   var eid = c.dataset.eid, key = c.dataset.ek, val = c.checked;
   saveEvents(function (list) { var e = list.filter(function (x) { return x.id === eid; })[0]; if (!e) return 'skip'; e[key] = val; }, key === 'going' ? (val ? 'Segnato: parteciperai.' : 'Tolto «Parteciperò».') : (val ? 'Segnato: ti interessa.' : 'Tolto «Mi interessa».'));
@@ -796,7 +830,9 @@ document.addEventListener('submit', function (ev) {
   ev.preventDefault(); if (V.eBusy) return;
   var name = $('en').value.trim();
   if (!name) { var m0 = $('emsg'); m0.className = 'msg bad'; m0.textContent = 'Scrivi il nome dell\'evento.'; $('en').focus(); return; }
-  var o = { id: 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), name: name, date: $('ed').value || '', place: $('ep').value.trim(), note: $('eno').value.replace(/\r\n/g, '\n').trim(), interested: $('ei').checked, going: $('eg').checked, member: V.pOwner, at: Date.now() };
+  var o = { id: 'e' + Date.now().toString(36) + Math.floor(Math.random() * 1e4).toString(36), name: name, date: $('ed').value || '', time: $('ed').value ? ($('eti').value || '') : '', place: $('ep').value.trim(), note: $('eno').value.replace(/\r\n/g, '\n').trim(), interested: $('ei').checked, going: $('eg').checked, member: V.pOwner, at: Date.now() };
+  // il calendario si apre subito, nel tocco su «Aggiungi evento» (altrimenti il telefono blocca la finestra)
+  if ($('ec').checked && o.date) { try { window.open(calUrl(o), '_blank'); } catch (e) {} }
   saveEvents(function (list) { list.push(o); }, 'Aggiunto: ' + name + '. Sul PC arriva alla prossima apertura di Plume.', function () { V.eAdd = false; });
 });
 document.addEventListener('submit', function (ev) {
