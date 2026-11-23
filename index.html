@@ -94,6 +94,38 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
 .mas{display:inline-block;background:var(--gold);color:var(--bg);font-size:11px;font-weight:600;border-radius:999px;padding:1px 8px;letter-spacing:.3px;width:max-content}
 .empty{color:var(--soft);padding:40px 0;text-align:center}
 
+/* dischi / artisti */
+.seg{display:flex;gap:3px;padding:3px;border:1px solid var(--line);border-radius:999px;background:var(--card);width:max-content;max-width:100%}
+.seg button{border:0;background:transparent;border-radius:999px;padding:7px 18px;font-size:14px;color:var(--soft)}
+.seg button.on{background:var(--ink);color:var(--bg);font-weight:600}
+.agrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:18px 12px;padding:6px 0 40px}
+.acard{display:flex;flex-direction:column;align-items:center;gap:6px;border:0;background:transparent;padding:4px;text-align:center;min-width:0;color:var(--ink)}
+.aph,.aphb{border-radius:50%;overflow:hidden;display:flex;align-items:center;justify-content:center;background:var(--line);box-shadow:var(--shadow);flex:none}
+.aph{width:min(120px,100%);aspect-ratio:1}
+.aph img,.aphb img{width:100%;height:100%;object-fit:cover;display:block}
+.aph.ini,.aphb.ini{color:rgba(255,255,255,.92);font-family:Georgia,serif;font-weight:600}
+.aph.ini{font-size:40px}
+.acard .an{font-weight:600;font-size:14.5px;line-height:1.25;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.acard .ac{color:var(--soft);font-size:12.5px}
+.ah{display:flex;gap:16px;align-items:center}
+.aphb{width:112px;height:112px}
+.aphb.ini{font-size:44px}
+.ah h2{font-size:24px;line-height:1.2;margin-bottom:4px}
+.ah .by{color:var(--soft);font-size:12.5px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;margin-bottom:3px}
+.aalb{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:12px}
+.aal{display:flex;flex-direction:column;gap:4px;border:0;background:transparent;padding:0;text-align:left;color:var(--ink);min-width:0}
+.aal img,.aal .noc{width:100%;aspect-ratio:1;border-radius:8px;object-fit:cover;background:var(--line);display:block;box-shadow:var(--shadow)}
+.aal b{font-size:13px;line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.aev{display:flex;flex-direction:column;gap:2px;padding:9px 12px;border:1px solid var(--line);border-radius:10px;margin-bottom:8px;font-size:14px}
+.aev span{color:var(--soft);font-size:13px}
+.aev i{font-style:normal;font-size:12px;font-weight:600;color:var(--accent)}
+.aev i.int{color:var(--soft)}
+.aev.going{border-color:var(--accent)}
+.bylink{border:0;background:transparent;padding:0;font:inherit;text-align:left;cursor:pointer;color:var(--soft)}
+.dh .by.bylink{color:var(--accent)}
+.aback{display:flex;align-items:center;gap:4px;border:1px solid var(--line);background:var(--card);border-radius:999px;padding:6px 12px 6px 8px;font-size:13.5px;font-weight:600;color:var(--ink);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.aback svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2;flex:none}
+
 /* scheda disco */
 #sheet{position:fixed;inset:0;z-index:50;background:rgba(20,17,15,.55);display:flex;align-items:flex-end;justify-content:center}
 .panel{background:var(--bg);width:100%;max-width:640px;max-height:92vh;overflow:auto;border-radius:18px 18px 0 0;padding:18px 18px calc(24px + env(safe-area-inset-bottom,0));position:relative}
@@ -278,6 +310,7 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
     <section id="v-coll" hidden>
       <div class="filters">
         <div class="mem" id="c-mem"></div>
+        <div class="seg" id="cview" role="group" aria-label="Mostra"><button type="button" data-cv="discs">Dischi</button><button type="button" data-cv="artists">Artisti</button></div>
         <div class="frow">
           <input id="q" type="search" placeholder="Cerca artista, titolo, etichetta…" autocomplete="off">
           <select id="min" aria-label="Voto minimo">
@@ -298,6 +331,7 @@ select{padding:10px 10px;border:1px solid var(--line);border-radius:10px;backgro
       </div>
       <div class="count" id="count"></div>
       <div class="grid" id="grid"></div>
+      <div class="agrid" id="agrid" hidden></div>
       <div class="empty" id="none" hidden>Nessun disco corrisponde ai filtri.</div>
     </section>
 
@@ -447,7 +481,7 @@ function idbClear() { return new Promise(function (res) { if (!idb) return res()
 
 // ---------- dati ----------
 var D = { discs: [], cache: {}, members: [], wishlist: [], events: [], history: null, histU: 0, loadedAt: 0 };
-var V = { tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false, eAdd: false, eEdit: '', eDel: '', eMsg: null, eBusy: false };
+var V = { cview: (lsGet('plume.cview') === 'artists' ? 'artists' : 'discs'), aids: [], curArtist: '', fromArtist: '', tab: 'coll', owner: 'all', media: 'all', q: '', min: 0, sort: 'artist', pOwner: 'all', wAdd: false, wDel: '', wMsg: null, wBusy: false, eAdd: false, eEdit: '', eDel: '', eMsg: null, eBusy: false };
 
 function ownerOf(r) { var m = D.members; if (!m.length) return ''; if (r.owner && m.some(function (x) { return x.id === r.owner; })) return r.owner; return m[0].id; }
 // una voce senza membro (o con un membro che non esiste piu) appartiene al profilo principale, come nell'app
@@ -601,6 +635,20 @@ function renderColl() {
     return cmp(a.artist, b.artist) || cmp(a.title, b.title);
   });
   V.ids = list.map(function (r) { return r.id; });
+  document.querySelectorAll('#cview button').forEach(function (b) { var on = b.dataset.cv === V.cview; b.classList.toggle('on', on); b.setAttribute('aria-pressed', on ? 'true' : 'false'); });
+  $('sort').hidden = V.cview === 'artists';
+  if (V.cview === 'artists') {                                       // elenco degli artisti (con i filtri attivi)
+    var groups = artistGroups(list);
+    V.aids = groups.map(function (g) { return g.name; });
+    $('count').textContent = groups.length + (groups.length === 1 ? ' artista' : ' artisti') + (list.length === D.discs.length ? '' : ' · ' + list.length + ' di ' + D.discs.length + ' dischi');
+    $('none').hidden = groups.length > 0;
+    $('grid').hidden = true; $('agrid').hidden = false; $('grid').innerHTML = '';
+    $('agrid').innerHTML = groups.map(function (g) {
+      return '<button class="acard" data-artist="' + esc(g.name) + '">' + artistPhoto(g, 'aph') + '<span class="an">' + esc(g.name) + '</span><span class="ac">' + g.recs.length + (g.recs.length === 1 ? ' disco' : ' dischi') + '</span></button>';
+    }).join('');
+    return;
+  }
+  $('grid').hidden = false; $('agrid').hidden = true; $('agrid').innerHTML = '';
   $('count').textContent = list.length === D.discs.length ? (list.length + ' dischi') : (list.length + ' di ' + D.discs.length + ' dischi');
   $('none').hidden = list.length > 0;
   $('grid').innerHTML = list.map(function (r) {
@@ -609,12 +657,65 @@ function renderColl() {
   }).join('');
 }
 
-function openDisc(id, dir) {
-  var r = D.discs.filter(function (x) { return x.id === id; })[0]; if (!r) return;
-  V.cur = id;
-  var ids = V.ids || [], idx = ids.indexOf(id), many = idx > -1 && ids.length > 1;
+// ---- artisti: raggruppa i dischi per nome; foto = quella della scheda artista (mai la copertina) ----
+function normA(s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); }
+function artistGroups(list) {
+  var by = {}, out = [];
+  list.forEach(function (r) { var k = normA(r.artist); if (!k) return; if (!by[k]) { by[k] = { name: r.artist.trim(), recs: [] }; out.push(by[k]); } by[k].recs.push(r); });
+  out.sort(function (a, b) { return a.name.localeCompare(b.name, 'it', { sensitivity: 'base' }); });
+  return out;
+}
+function recsOfArtist(name) { var k = normA(name); return D.discs.filter(function (r) { return normA(r.artist) === k; }); }
+var SW = ['#8C4A3D', '#2E6B63', '#B08A2E', '#3E5C8A', '#7A4E7E', '#5C7A3E', '#A25C2E', '#3E7A7A', '#8A3E5C', '#4E6E4E', '#7A5C3E', '#3E5A7A'];
+function swatch(name) { var h = 0, s = String(name || ''); for (var i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return SW[Math.abs(h) % SW.length]; }
+function artistPhoto(g, cls) {
+  var all = recsOfArtist(g.name), ph = ''; all.forEach(function (r) { if (!ph && r.artistPhoto) ph = r.artistPhoto; });
+  if (ph) return '<span class="' + cls + '"><img src="' + esc(ph) + '" alt=""></span>';
+  return '<span class="' + cls + ' ini" style="background:' + swatch(g.name) + '">' + esc(g.name.trim().charAt(0).toUpperCase() || '?') + '</span>';
+}
+function artistEventsOf(name) {
+  var norm = function (x) { return String(x || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim(); };
+  var a = norm(name); if (!a) return [];
+  var today = new Date().toISOString().slice(0, 10);
+  return D.events.filter(function (e) { return (' ' + norm(e.name) + ' ').indexOf(' ' + a + ' ') > -1 && (!e.date || e.date >= today); })
+    .sort(function (x, y) { return String(x.date || '9999').localeCompare(String(y.date || '9999')); });
+}
+function openArtist(name, dir) {
+  var recs = recsOfArtist(name); if (!recs.length) return;
+  var shown = recs[0].artist.trim();
+  V.cur = null; V.curArtist = shown;
+  recs.sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || ''), 'it'); });
+  var ids = V.aids || [], idx = ids.indexOf(shown), many = idx > -1 && ids.length > 1 && V.cview === 'artists' && V.tab === 'coll';
   var ar = function (d) { return '<svg viewBox="0 0 24 24"><path d="' + (d < 0 ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7') + '"/></svg>'; };
   var pbar = '<div class="pbar"><span class="pos">' + (many ? (idx + 1) + ' / ' + ids.length : '') + '</span><div class="pbtns">' +
+    (many ? '<button class="ib" id="pv" aria-label="Artista precedente"' + (idx <= 0 ? ' disabled' : '') + '>' + ar(-1) + '</button><button class="ib" id="nx" aria-label="Artista successivo"' + (idx >= ids.length - 1 ? ' disabled' : '') + '>' + ar(1) + '</button>' : '') +
+    '<button class="ib" id="xs" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>';
+  var bio = '', meta = null; recs.forEach(function (r) { if (!bio && r.artistBio) { bio = r.artistBio; meta = r; } });
+  var rated = recs.filter(function (r) { return r.rating; }), avg = rated.length ? rated.reduce(function (s, r) { return s + r.rating; }, 0) / rated.length : 0;
+  var src = meta ? (meta.artistBioSource === 'user' ? 'Scritta da te.' : 'Scritta da Claude. Può contenere imprecisioni.') : '';
+  var evs = artistEventsOf(shown);
+  var fmtD = function (d) { try { return new Date(d + 'T12:00:00').toLocaleDateString('it-IT', { weekday: 'short', day: 'numeric', month: 'long', year: 'numeric' }); } catch (e) { return d; } };
+  var wiki = 'https://www.google.com/search?udm=50&q=' + encodeURIComponent('Parlami dell\'artista ' + shown);
+  $('panel').innerHTML = pbar + '<div class="pc' + (dir ? ' in-' + dir : '') + '">' +
+    '<div class="ah">' + artistPhoto({ name: shown }, 'aphb') + '<div><div class="by">Artista</div><h2>' + esc(shown) + '</h2>' +
+      '<div class="tags"><span class="tag">' + recs.length + (recs.length === 1 ? ' disco' : ' dischi') + '</span>' + (avg ? '<span class="tag">media ' + avg.toFixed(1).replace('.', ',') + ' ★</span>' : '') + '</div></div></div>' +
+    '<div class="dsec"><h3>Biografia</h3>' + (bio ? String(bio).split(/\n+/).filter(Boolean).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') + '<p class="hint">' + src + '</p>' : '<p class="hint">Nessuna biografia. Puoi scriverla o farla scrivere a Claude dalla scheda dell\'artista in Plume sul PC.</p>') + '</div>' +
+    '<div class="dsec"><h3>Nella tua collezione</h3><div class="aalb">' + recs.map(function (r) {
+      return '<button class="aal" data-aid="' + esc(r.id) + '">' + (r.cover ? '<img alt="" loading="lazy" src="' + esc(r.cover) + '">' : '<span class="noc"></span>') + '<b>' + esc(r.title || '—') + '</b>' + stars(r.rating) + '</button>';
+    }).join('') + '</div></div>' +
+    (evs.length ? '<div class="dsec"><h3>Concerti</h3>' + evs.map(function (e) {
+      return '<div class="aev' + (e.going ? ' going' : '') + '"><b>' + esc(e.name) + '</b><span>' + (e.date ? esc(fmtD(e.date)) + (e.time ? ', ore ' + esc(e.time) : '') : 'data da definire') + (e.place ? ' · ' + esc(e.place) : '') + '</span>' + (e.going ? '<i>Parteciperò</i>' : (e.interested ? '<i class="int">Mi interessa</i>' : '')) + '</div>';
+    }).join('') + '</div>' : '') +
+    '<div class="dsec"><a href="' + wiki + '" target="_blank" rel="noopener noreferrer">Cerca su Google</a></div></div>';
+  $('panel').scrollTop = 0;
+  $('sheet').hidden = false; document.body.style.overflow = 'hidden';
+}
+function openDisc(id, dir) {
+  var r = D.discs.filter(function (x) { return x.id === id; })[0]; if (!r) return;
+  V.cur = id; V.curArtist = '';
+  var ids = V.ids || [], idx = ids.indexOf(id), many = idx > -1 && ids.length > 1;
+  var ar = function (d) { return '<svg viewBox="0 0 24 24"><path d="' + (d < 0 ? 'M15 5l-7 7 7 7' : 'M9 5l7 7-7 7') + '"/></svg>'; };
+  var pbar = '<div class="pbar">' + (V.fromArtist ? '<button class="aback" id="aback" type="button"><svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>' + esc(V.fromArtist) + '</button>' : '<span class="pos">' + (many ? (idx + 1) + ' / ' + ids.length : '') + '</span>') + '<div class="pbtns">' +
     (many ? '<button class="ib" id="pv" aria-label="Disco precedente"' + (idx <= 0 ? ' disabled' : '') + '>' + ar(-1) + '</button><button class="ib" id="nx" aria-label="Disco successivo"' + (idx >= ids.length - 1 ? ' disabled' : '') + '>' + ar(1) + '</button>' : '') +
     '<button class="ib" id="xs" aria-label="Chiudi"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div></div>';
   var own = D.members.filter(function (m) { return m.id === ownerOf(r); })[0];
@@ -622,7 +723,7 @@ function openDisc(id, dir) {
   var kv = function (k, v) { return v ? '<div class="kv"><span>' + k + '</span><span>' + v + '</span></div>' : ''; };
   var ov = r.overview ? String(r.overview).split(/\n+/).filter(Boolean).map(function (p) { return '<p>' + esc(p) + '</p>'; }).join('') : '';
   var wiki = 'https://www.google.com/search?udm=50&q=' + encodeURIComponent('Parlami dell\'album ' + (r.title || '') + (r.artist ? ' di ' + r.artist : ''));
-  $('panel').innerHTML = pbar + '<div class="pc' + (dir ? ' in-' + dir : '') + '"><div class="dh">' + (r.cover ? '<img alt="" src="' + esc(r.cover) + '">' : '') + '<div><div class="by">' + esc(r.artist || 'Sconosciuto') + '</div><h2>' + esc(r.title || '—') + '</h2>' + stars(r.rating) +
+  $('panel').innerHTML = pbar + '<div class="pc' + (dir ? ' in-' + dir : '') + '"><div class="dh">' + (r.cover ? '<img alt="" src="' + esc(r.cover) + '">' : '') + '<div><button class="by bylink" type="button" data-artist="' + esc(r.artist || '') + '" title="Apri la scheda dell\'artista">' + esc(r.artist || 'Sconosciuto') + ' ›</button><h2>' + esc(r.title || '—') + '</h2>' + stars(r.rating) +
     '<div class="tags">' + mm.map(function (m) { return '<span class="tag">' + m + '</span>'; }).join('') + (r.genre ? '<span class="tag">' + esc(r.genre) + '</span>' : '') + '</div></div></div>' +
     '<div class="dsec">' + kv('Etichetta', esc(r.label)) + kv('Nella collezione di', own ? esc(own.name) : '') + kv('Nota', esc(r.note)) + '</div>' +
     (ov ? '<div class="dsec"><h3>Overview</h3>' + ov + '</div>' : '') +
@@ -669,11 +770,16 @@ async function saveTracks(r, tracks, mbid) {
   var ent = { id: r.id, u: now, rec: r }; D.cache[r.id] = ent; await idbOpen(); await idbWrite([ent], []);
 }
 function navDisc(d) {
+  if (V.curArtist) {                                                   // scheda artista: scorre tra gli artisti
+    var as = V.aids || [], j = as.indexOf(V.curArtist), m = j + d;
+    if (j < 0 || m < 0 || m >= as.length || V.cview !== 'artists') return;
+    return openArtist(as[m], d > 0 ? 'next' : 'prev');
+  }
   var ids = V.ids || [], i = ids.indexOf(V.cur), n = i + d;
   if (i < 0 || n < 0 || n >= ids.length) return;
   openDisc(ids[n], d > 0 ? 'next' : 'prev');
 }
-function closeDisc() { $('sheet').hidden = true; document.body.style.overflow = ''; }
+function closeDisc() { $('sheet').hidden = true; document.body.style.overflow = ''; V.fromArtist = ''; V.curArtist = ''; V.cur = null; }
 
 function summary(sel) {
   var artists = {}, genres = {}, cd = 0, vn = 0, dv = 0, ms = 0, rated = 0, sum = 0, total = 0;
@@ -774,7 +880,15 @@ document.addEventListener('click', function (ev) {
   var tab = t.closest('.tab'); if (tab) return show(tab.dataset.tab);
   var mb = t.closest('.m'); if (mb) { V.wMsg = null; V.wDel = ''; V.eMsg = null; V.eDel = ''; V.eAdd = false; V.eEdit = ''; if (V.tab === 'coll') V.owner = mb.dataset.m; else V.pOwner = mb.dataset.m; return renderAll(); }
   var md = t.closest('[data-md]'); if (md) { V.media = md.dataset.md; return renderColl(); }
-  var card = t.closest('.card'); if (card) return openDisc(card.dataset.id);
+  var card = t.closest('.card'); if (card) { V.fromArtist = ''; return openDisc(card.dataset.id); }
+  var cvb = t.closest('[data-cv]'); if (cvb) { V.cview = cvb.dataset.cv; lsSet('plume.cview', V.cview === 'artists' ? 'artists' : ''); window.scrollTo(0, 0); return renderColl(); }
+  var acard = t.closest('.acard'); if (acard) return openArtist(acard.dataset.artist);
+  var bl = t.closest('.bylink'); if (bl && bl.dataset.artist) { V.fromArtist = ''; return openArtist(bl.dataset.artist, 'next'); }
+  var aal = t.closest('.aal'); if (aal) {                             // disco dalla scheda artista: ricorda da dove si arriva
+    var art = V.curArtist; V.fromArtist = art; var keep = V.ids; V.ids = recsOfArtist(art).sort(function (a, b) { return String(a.title || '').localeCompare(String(b.title || ''), 'it'); }).map(function (r) { return r.id; });
+    openDisc(aal.dataset.aid, 'next'); V.ids = keep; return;
+  }
+  if (t.closest('#aback')) { var fa0 = V.fromArtist; V.fromArtist = ''; return openArtist(fa0, 'prev'); }
   if (t.closest('#pv')) return navDisc(-1);
   if (t.closest('#nx')) return navDisc(1);
   if (t.closest('#xs') || t === $('sheet')) return closeDisc();
